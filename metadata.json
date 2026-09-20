@@ -1,0 +1,6 @@
+{
+  "name": "Quantitative Research Platform",
+  "description": "An end-to-end quantitative research platform for instrument design, participant data collection, deterministic coding and scoring, assumption checking, and statistical analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
