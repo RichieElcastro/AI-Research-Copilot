@@ -118,7 +118,25 @@ export type AuditAction =
   | 'ai_candidate_accepted'
   | 'ai_candidate_edited'
   | 'ai_candidate_rejected'
-  | 'ai_candidates_batch_accepted';
+  | 'ai_candidates_batch_accepted'
+  | 'questionnaire_created'
+  | 'questionnaire_settings_updated'
+  | 'questionnaire_published'
+  | 'questionnaire_paused'
+  | 'questionnaire_resumed'
+  | 'questionnaire_closed'
+  | 'questionnaire_archived'
+  | 'survey_session_started'
+  | 'submission_received'
+  | 'processing_run_created'
+  | 'processing_run_completed'
+  | 'processing_run_failed'
+  | 'scoring_rule_created'
+  | 'scoring_rule_updated'
+  | 'scoring_rule_deleted'
+  | 'scoring_run_created'
+  | 'scoring_run_completed'
+  | 'scoring_run_failed';
 
 export type AuditEntityType =
   | 'project'
@@ -129,7 +147,16 @@ export type AuditEntityType =
   | 'item'
   | 'scale'
   | 'ai_generation'
-  | 'ai_item';
+  | 'ai_item'
+  | 'questionnaire'
+  | 'questionnaire_version'
+  | 'survey_submission'
+  | 'processing_run'
+  | 'processed_dataset'
+  | 'codebook'
+  | 'scoring_rule'
+  | 'scoring_run'
+  | 'scored_dataset';
 
 // ==========================================
 // PHASE 2: INSTRUMENT & MEASUREMENT DOMAIN TYPES

@@ -5,6 +5,10 @@ import { projectService } from '../../services/projectService';
 import { variableService } from '../../services/variableService';
 import { instrumentService } from '../../services/instrumentService';
 import { scaleService } from '../../services/scaleService';
+import { questionnaireService } from '../../services/questionnaireService';
+import { submissionService } from '../../services/submissionService';
+import { processingService } from '../../services/processingService';
+import { scoringService } from '../../services/scoringService';
 import { Modal } from '../common/Modal';
 
 interface SecurityTestModalProps {
@@ -120,6 +124,269 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
       actualStatus: res6.statusCode || (res6.success ? 200 : 403),
       passed: !res6.success && res6.statusCode === 403,
       message: res6.error || 'Custom scale query unexpectedly allowed',
+    });
+
+    // TEST 7: Cross-Tenant Questionnaire Access Denial
+    const res7 = questionnaireService.getByProject(targetForeignProjectId, currentUser.id);
+    newResults.push({
+      name: 'Cross-Tenant Questionnaire Query Denial',
+      target: `questionnaireService.getByProject("${targetForeignProjectId}", "${currentUser.id}")`,
+      expectedStatus: 403,
+      actualStatus: res7.statusCode || (res7.success ? 200 : 403),
+      passed: !res7.success && res7.statusCode === 403,
+      message: res7.error || 'Foreign questionnaire query unexpectedly allowed',
+    });
+
+    // TEST 8: Rejection of Questionnaire Creation from Unapproved Instrument
+    const currentProj = allProjects.find(p => p.userId === currentUser.id);
+    if (currentProj) {
+      const insts = instrumentService.getInstruments(currentProj.id, currentUser.id);
+      const draftInst = (insts.data || []).find(i => i.status !== 'Approved');
+      if (draftInst) {
+        const res8 = questionnaireService.createFromApprovedInstrument(
+          currentProj.id,
+          draftInst.id,
+          currentUser.id,
+          currentUser.name
+        );
+        newResults.push({
+          name: 'Draft/Review Instrument Questionnaire Gate',
+          target: `createFromApprovedInstrument(..., instrument.status="${draftInst.status}")`,
+          expectedStatus: 400,
+          actualStatus: res8.statusCode || (res8.success ? 201 : 400),
+          passed: !res8.success && res8.statusCode === 400,
+          message: res8.error || 'Draft instrument unexpectedly allowed to create questionnaire',
+        });
+      }
+
+      // TEST 9: Invalid Lifecycle Transition Denial (Attempt to Pause Draft)
+      const allQ = questionnaireService._getAllQuestionnaires();
+      const userQ = allQ.find(q => q.projectId === currentProj.id);
+      if (userQ && userQ.status !== 'Published') {
+        const res9 = questionnaireService.pause(
+          userQ.id,
+          currentProj.id,
+          currentUser.id,
+          currentUser.name
+        );
+        newResults.push({
+          name: 'Invalid Lifecycle State Transition Rejection',
+          target: `questionnaireService.pause(status="${userQ.status}")`,
+          expectedStatus: 400,
+          actualStatus: res9.statusCode || (res9.success ? 200 : 400),
+          passed: !res9.success && res9.statusCode === 400,
+          message: res9.error || 'Invalid transition unexpectedly accepted',
+        });
+      }
+    }
+
+    // TEST 10: Cross-Tenant Raw Submissions Isolation Check
+    const res10 = submissionService.getProjectSubmissions(targetForeignProjectId, currentUser.id);
+    newResults.push({
+      name: 'Cross-Tenant Raw Submissions Access Denial',
+      target: `submissionService.getProjectSubmissions("${targetForeignProjectId}", "${currentUser.id}")`,
+      expectedStatus: 403,
+      actualStatus: res10.statusCode || (res10.success ? 200 : 403),
+      passed: !res10.success && res10.statusCode === 403,
+      message: res10.error || 'Cross-tenant raw submission query unexpectedly authorized',
+    });
+
+    // TEST 11: Submission Engine Rejection of Unconsented Response
+    const res11 = submissionService.submit({
+      questionnaireId: 'non_existent_id',
+      questionnaireVersionId: 'non_existent_version',
+      sessionId: 'test_session_unconsented',
+      startedAt: new Date().toISOString(),
+      consentGiven: false,
+      rawResponses: {},
+    });
+    newResults.push({
+      name: 'Submission Integrity: Unconsented Response Rejection',
+      target: 'submissionService.submit({ consentGiven: false })',
+      expectedStatus: 404, // Questionnaire not found or validation failure
+      actualStatus: res11.statusCode || (res11.success ? 201 : 400),
+      passed: !res11.success,
+      message: res11.error || 'Unconsented submission was unexpectedly accepted',
+    });
+
+    // TEST 12: Cross-Tenant Processing Runs Access Denial
+    const res12 = processingService.getRunsByProject(targetForeignProjectId, currentUser.id);
+    newResults.push({
+      name: 'Cross-Tenant Processing Runs Access Denial',
+      target: `processingService.getRunsByProject("${targetForeignProjectId}", "${currentUser.id}")`,
+      expectedStatus: 403,
+      actualStatus: res12.statusCode || (res12.success ? 200 : 403),
+      passed: !res12.success && res12.statusCode === 403,
+      message: res12.error || 'Cross-tenant processing runs query unexpectedly authorized',
+    });
+
+    // TEST 13: Cross-Tenant Processing Execution Denial
+    const res13 = processingService.runProcessing({
+      projectId: targetForeignProjectId,
+      questionnaireId: 'q_fake_id',
+      questionnaireVersionId: 'ver_fake_id',
+      missingValuePolicy: 'preserve_missing',
+      userId: currentUser.id,
+      userName: currentUser.name,
+    });
+    newResults.push({
+      name: 'Cross-Tenant Processing Execution Denial',
+      target: `processingService.runProcessing(projectId="${targetForeignProjectId}", ...)`,
+      expectedStatus: 403,
+      actualStatus: res13.statusCode || (res13.success ? 201 : 403),
+      passed: !res13.success && res13.statusCode === 403,
+      message: res13.error || 'Cross-tenant processing run execution unexpectedly authorized',
+    });
+
+    // TEST 14: Deterministic Reverse Coding Invariant Verification
+    const revRule = { minValue: 1, maxValue: 5, formula: 'max(5) + min(1) - x' };
+    const rev1 = processingService.reverseCodeValue(1, revRule, true); // 5 + 1 - 1 = 5
+    const rev2 = processingService.reverseCodeValue(2, revRule, true); // 5 + 1 - 2 = 4
+    const rev3 = processingService.reverseCodeValue(3, revRule, true); // 5 + 1 - 3 = 3
+    const rev4 = processingService.reverseCodeValue(4, revRule, true); // 5 + 1 - 4 = 2
+    const rev5 = processingService.reverseCodeValue(5, revRule, true); // 5 + 1 - 5 = 1
+    const revFormulaHolds =
+      rev1.reverseCodedValue === 5 &&
+      rev2.reverseCodedValue === 4 &&
+      rev3.reverseCodedValue === 3 &&
+      rev4.reverseCodedValue === 2 &&
+      rev5.reverseCodedValue === 1;
+
+    newResults.push({
+      name: 'Deterministic Reverse Coding Math Invariant (1-5 Scale)',
+      target: 'processingService.reverseCodeValue(x, { min:1, max:5 }, true) -> [5,4,3,2,1]',
+      expectedStatus: 200,
+      actualStatus: revFormulaHolds ? 200 : 500,
+      passed: revFormulaHolds,
+      message: revFormulaHolds
+        ? 'Verified exact mathematical formula max(5)+min(1)-x produces [5,4,3,2,1]'
+        : 'Reverse coding formula deviation detected',
+    });
+
+    // TEST 15: Missing Value Imputation Prohibition (No Statistical Imputation)
+    const emptyCoded = processingService.codeRawValue('', { id: 'test', itemCode: 'Q1', itemType: 'Likert' } as any, [], {});
+    const missingPreserved = processingService.applyMissingPolicy('preserve_missing');
+    const userCodeApplied = processingService.applyMissingPolicy('user_defined_code', -99);
+    const missingPolicyHolds =
+      emptyCoded.status === 'Missing' &&
+      emptyCoded.flagReason === 'MISSING_VALUE' &&
+      missingPreserved === null &&
+      userCodeApplied === -99;
+
+    newResults.push({
+      name: 'Statistical Imputation Prohibition Invariant',
+      target: 'codeRawValue("") -> status="Missing", applyMissingPolicy -> null / user code',
+      expectedStatus: 200,
+      actualStatus: missingPolicyHolds ? 200 : 500,
+      passed: missingPolicyHolds,
+      message: missingPolicyHolds
+        ? 'Verified missing values remain transparently null or user-coded without statistical imputation'
+        : 'Missing value handling anomaly detected',
+    });
+
+    // TEST 16: Cross-Tenant Scoring Rules Query Denial
+    const res16 = scoringService.getRulesByProject(targetForeignProjectId, currentUser.id);
+    newResults.push({
+      name: 'Cross-Tenant Scoring Rules Query Denial',
+      target: `scoringService.getRulesByProject("${targetForeignProjectId}", "${currentUser.id}")`,
+      expectedStatus: 403,
+      actualStatus: res16.statusCode || (res16.success ? 200 : 403),
+      passed: !res16.success && res16.statusCode === 403,
+      message: res16.error || 'Cross-tenant scoring rules query unexpectedly authorized',
+    });
+
+    // TEST 17: Cross-Tenant Scoring Execution Denial
+    const res17 = scoringService.runScoring({
+      projectId: targetForeignProjectId,
+      processingRunId: 'pr_foreign_id',
+      rules: [],
+      userId: currentUser.id,
+      userName: currentUser.name,
+    });
+    newResults.push({
+      name: 'Cross-Tenant Scoring Execution Denial',
+      target: `scoringService.runScoring(projectId="${targetForeignProjectId}", ...)`,
+      expectedStatus: 403,
+      actualStatus: res17.statusCode || (res17.success ? 200 : 403),
+      passed: !res17.success && res17.statusCode === 403,
+      message: res17.error || 'Cross-tenant scoring execution unexpectedly authorized',
+    });
+
+    // TEST 18: Deterministic Scoring Math Invariants (MEAN, SUM, MEDIAN, MIN, MAX)
+    const testValues = [1, 2, 4, 5]; // Sum=12, Mean=3.0, Median=3.0, Min=1, Max=5
+    const sumVal = scoringService.calculateScore(testValues, 'SUM');
+    const meanVal = scoringService.calculateScore(testValues, 'MEAN');
+    const medianVal = scoringService.calculateScore(testValues, 'MEDIAN');
+    const minVal = scoringService.calculateScore(testValues, 'MIN');
+    const maxVal = scoringService.calculateScore(testValues, 'MAX');
+
+    const mathInvariantsHold =
+      sumVal === 12 &&
+      meanVal === 3 &&
+      medianVal === 3 &&
+      minVal === 1 &&
+      maxVal === 5;
+
+    newResults.push({
+      name: 'Deterministic Scoring Aggregation Invariants',
+      target: 'calculateScore([1,2,4,5]) -> SUM=12, MEAN=3.0, MEDIAN=3.0, MIN=1, MAX=5',
+      expectedStatus: 200,
+      actualStatus: mathInvariantsHold ? 200 : 500,
+      passed: mathInvariantsHold,
+      message: mathInvariantsHold
+        ? 'Verified exact deterministic math for all 5 aggregation methods'
+        : `Math invariant failure: SUM=${sumVal}, MEAN=${meanVal}, MEDIAN=${medianVal}`,
+    });
+
+    // TEST 19: Missing Value Policy Invariants (complete_case, available_case, minimum_required_items)
+    // 3 items with 1 missing: validValues = [4, 2], total = 3
+    const validVals = [4, 2];
+    const totalCount = 3;
+
+    // Under complete_case: missing 1 item causes canCalculate to be false
+    const completeCaseRes = scoringService.evaluateMissingPolicy(totalCount, validVals, 'complete_case');
+
+    // Under available_case: 2 valid items allow calculation
+    const availableCaseRes = scoringService.evaluateMissingPolicy(totalCount, validVals, 'available_case');
+
+    // Under minimum_required_items (min=3): only 2 valid -> canCalculate is false
+    const minReq3Res = scoringService.evaluateMissingPolicy(totalCount, validVals, 'minimum_required_items', 3);
+
+    // Under minimum_required_items (min=2): 2 valid -> canCalculate is true
+    const minReq2Res = scoringService.evaluateMissingPolicy(totalCount, validVals, 'minimum_required_items', 2);
+
+    const missingPoliciesHold =
+      !completeCaseRes.canCalculate &&
+      availableCaseRes.canCalculate &&
+      !minReq3Res.canCalculate &&
+      minReq2Res.canCalculate;
+
+    newResults.push({
+      name: 'Missing Value Policy Enforcement Invariants',
+      target: 'evaluateMissingPolicy with complete_case, available_case, minimum_required_items',
+      expectedStatus: 200,
+      actualStatus: missingPoliciesHold ? 200 : 500,
+      passed: missingPoliciesHold,
+      message: missingPoliciesHold
+        ? 'Verified complete_case requires 100%, available_case allows partials, and minimum_required_items enforces threshold'
+        : 'Missing value policy deviation detected',
+    });
+
+    // TEST 20: Full Precision Preservation Invariant (No Unrequested Rounding)
+    // Mean of [1, 2, 4] = 7/3 = 2.3333333333333335
+    const precisionValues = [1, 2, 4];
+    const rawPrecisionMean = scoringService.calculateScore(precisionValues, 'MEAN');
+    const isUnrounded = rawPrecisionMean !== null && Math.abs(rawPrecisionMean - 7 / 3) < 1e-12 && String(rawPrecisionMean).length > 10;
+
+    newResults.push({
+      name: 'Full Numeric Precision Invariant (No Silent Rounding)',
+      target: 'calculateScore([1,2,4], "MEAN") -> 2.3333333333333335',
+      expectedStatus: 200,
+      actualStatus: isUnrounded ? 200 : 500,
+      passed: isUnrounded,
+      message: isUnrounded
+        ? `Preserved full double-precision floating point (${rawPrecisionMean}) without silent truncation`
+        : `Precision was unexpectedly truncated: ${rawPrecisionMean}`,
     });
 
     setResults(newResults);

@@ -16,8 +16,8 @@ import {
 import { WorkflowStage } from '../../types';
 
 interface WorkflowTrackerProps {
-  currentStage: 'setup' | 'variables' | 'instruments' | 'audit';
-  onSelectStage: (stage: 'setup' | 'variables' | 'instruments' | 'audit') => void;
+  currentStage: 'setup' | 'variables' | 'instruments' | 'questionnaire' | 'collection' | 'processing' | 'scoring' | 'audit';
+  onSelectStage: (stage: 'setup' | 'variables' | 'instruments' | 'questionnaire' | 'collection' | 'processing' | 'scoring' | 'audit') => void;
   variableCount: number;
 }
 
@@ -44,39 +44,39 @@ export const WORKFLOW_STAGES: WorkflowStage[] = [
     description: 'Scale items, literature references & reverse scoring rules',
     phaseNumber: 2,
     isImplemented: true,
-    status: 'active',
+    status: 'completed',
   },
   {
     id: 4,
     name: 'Questionnaire',
     description: 'Audit gates, consent form & versioned release candidate',
     phaseNumber: 3,
-    isImplemented: false,
-    status: 'upcoming',
+    isImplemented: true,
+    status: 'completed',
   },
   {
     id: 5,
     name: 'Data Collection',
     description: 'Anonymous participant submission & raw response storage',
     phaseNumber: 4,
-    isImplemented: false,
-    status: 'upcoming',
+    isImplemented: true,
+    status: 'completed',
   },
   {
     id: 6,
-    name: 'Data Coding',
-    description: 'Automated item-to-numeric coding & audit lineage tracking',
+    name: 'Data Processing',
+    description: 'Deterministic coding, reverse coding & processed dataset generation',
     phaseNumber: 5,
-    isImplemented: false,
-    status: 'upcoming',
+    isImplemented: true,
+    status: 'completed',
   },
   {
     id: 7,
     name: 'Scoring',
-    description: 'Reverse coding execution & composite variable aggregation',
+    description: 'Deterministic dimension & composite construct aggregation',
     phaseNumber: 6,
-    isImplemented: false,
-    status: 'upcoming',
+    isImplemented: true,
+    status: 'active',
   },
   {
     id: 8,
@@ -146,7 +146,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
               Quantitative Research Workflow
             </span>
             <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-              Phase 1 &amp; 2 Active (Stages 1, 2 &amp; 3)
+              Phase 1, 2, 3, 4, 5 &amp; 6 Active (Stages 1–7)
             </span>
           </div>
           <span className="text-xs text-slate-700 font-medium">
@@ -162,7 +162,11 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
               const isSelected =
                 (stage.id === 1 && currentStage === 'setup') ||
                 (stage.id === 2 && currentStage === 'variables') ||
-                (stage.id === 3 && currentStage === 'instruments');
+                (stage.id === 3 && currentStage === 'instruments') ||
+                (stage.id === 4 && currentStage === 'questionnaire') ||
+                (stage.id === 5 && currentStage === 'collection') ||
+                (stage.id === 6 && currentStage === 'processing') ||
+                (stage.id === 7 && currentStage === 'scoring');
 
               return (
                 <button
@@ -174,6 +178,10 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
                     if (stage.id === 1) onSelectStage('setup');
                     if (stage.id === 2) onSelectStage('variables');
                     if (stage.id === 3) onSelectStage('instruments');
+                    if (stage.id === 4) onSelectStage('questionnaire');
+                    if (stage.id === 5) onSelectStage('collection');
+                    if (stage.id === 6) onSelectStage('processing');
+                    if (stage.id === 7) onSelectStage('scoring');
                   }}
                   title={
                     isFunctional

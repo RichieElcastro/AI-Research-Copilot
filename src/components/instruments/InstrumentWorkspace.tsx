@@ -21,6 +21,7 @@ import {
   Tag,
   Check,
   Archive,
+  FileQuestion,
 } from 'lucide-react';
 import {
   Instrument,
@@ -43,6 +44,7 @@ import { InstrumentFormModal } from './InstrumentFormModal';
 import { ScaleManagerModal } from './ScaleManagerModal';
 import { QuestionnairePreviewModal } from './QuestionnairePreviewModal';
 import { AIReadinessModal } from './AIReadinessModal';
+import { QuestionnairePublishModal } from '../questionnaires/QuestionnairePublishModal';
 import { InstrumentValidationCard } from './InstrumentValidationCard';
 import { AIGeneratorModal } from '../ai/AIGeneratorModal';
 
@@ -79,6 +81,7 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   const [project, setProject] = useState<ResearchProject | null>(null);
   const [isAIGeneratorOpen, setIsAIGeneratorOpen] = useState(false);
   const [aiGeneratorIndicatorId, setAiGeneratorIndicatorId] = useState<string | undefined>(undefined);
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
 
   // Active view tab: 'items' | 'construct_tree' | 'validation' | 'versions'
   const [activeTab, setActiveTab] = useState<'items' | 'construct_tree' | 'validation' | 'versions'>('items');
@@ -417,6 +420,19 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
             >
               <Edit2 className="w-3.5 h-3.5 text-slate-500" />
               Edit Specs
+            </button>
+          )}
+
+          {isApproved && (
+            <button
+              type="button"
+              id="action-publish-questionnaire-top"
+              onClick={() => setIsPublishModalOpen(true)}
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-2xs inline-flex items-center gap-1.5"
+              title="Publish this approved instrument into an immutable questionnaire release"
+            >
+              <FileQuestion className="w-3.5 h-3.5" />
+              <span>Publish Questionnaire</span>
             </button>
           )}
         </div>
@@ -1021,6 +1037,18 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
           initialIndicatorId={aiGeneratorIndicatorId}
           onItemsAddedToInstrument={() => {
             loadData();
+          }}
+        />
+      )}
+
+      {instrument && (
+        <QuestionnairePublishModal
+          isOpen={isPublishModalOpen}
+          onClose={() => setIsPublishModalOpen(false)}
+          projectId={projectId}
+          preselectedInstrumentId={instrument.id}
+          onSuccess={() => {
+            setIsPublishModalOpen(false);
           }}
         />
       )}

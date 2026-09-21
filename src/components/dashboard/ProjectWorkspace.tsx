@@ -23,6 +23,10 @@ import { InstrumentWorkspace } from '../instruments/InstrumentWorkspace';
 import { AuditTrailTab } from './AuditTrailTab';
 import { ProjectOverviewTab } from './ProjectOverviewTab';
 import { WorkflowTracker } from './WorkflowTracker';
+import { QuestionnaireTab } from '../questionnaires/QuestionnaireTab';
+import { DataCollectionDashboard } from '../collection/DataCollectionDashboard';
+import { DataProcessingDashboard } from '../processing/DataProcessingDashboard';
+import { ScoringDashboard } from '../scoring/ScoringDashboard';
 import { instrumentService } from '../../services/instrumentService';
 import { scaleService } from '../../services/scaleService';
 
@@ -41,7 +45,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
   const [project, setProject] = useState<ResearchProject | null>(null);
   const [variableCount, setVariableCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [currentStage, setCurrentStage] = useState<'setup' | 'variables' | 'instruments' | 'audit'>('setup');
+  const [currentStage, setCurrentStage] = useState<
+    'setup' | 'variables' | 'instruments' | 'questionnaire' | 'collection' | 'processing' | 'scoring' | 'audit'
+  >('setup');
   const [selectedInstrumentId, setSelectedInstrumentId] = useState<string | null>(null);
 
   // Modals
@@ -230,6 +236,37 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
               onSelectInstrument={id => setSelectedInstrumentId(id)}
             />
           )
+        )}
+
+        {currentStage === 'questionnaire' && (
+          <QuestionnaireTab
+            projectId={project.id}
+            onNavigateToInstruments={() => {
+              setCurrentStage('instruments');
+              setSelectedInstrumentId(null);
+            }}
+          />
+        )}
+
+        {currentStage === 'collection' && (
+          <DataCollectionDashboard
+            projectId={project.id}
+            onNavigateToStage={stage => setCurrentStage(stage)}
+          />
+        )}
+
+        {currentStage === 'processing' && (
+          <DataProcessingDashboard
+            projectId={project.id}
+            onNavigateToStage={stage => setCurrentStage(stage)}
+          />
+        )}
+
+        {currentStage === 'scoring' && (
+          <ScoringDashboard
+            projectId={project.id}
+            onNavigateToStage={stage => setCurrentStage(stage)}
+          />
         )}
 
         {currentStage === 'audit' && <AuditTrailTab projectId={project.id} />}
