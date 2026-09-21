@@ -33,19 +33,16 @@ import {
   ScoringRunWarning,
   ScoringSourceType,
   ScoringTargetType,
+  Variable,
 } from '../types';
 import { auditService } from './auditService';
 import { processingService } from './processingService';
 import { projectService, ServiceResult } from './projectService';
-import { storage } from './storage';
 import { variableService } from './variableService';
 
-/**
- * Namespaced storage keys conforming to qrp_v1_*
- */
-const SCORING_RUNS_KEY = 'scoring_runs';
-const SCORING_RULES_KEY = 'scoring_rules';
-const SCORED_DATASETS_KEY = 'scored_datasets';
+let memoryScoringRuns: ScoringRun[] = [];
+let memoryScoringRules: ScoringRule[] = [];
+let memoryScoredDatasets: ScoredDataset[] = [];
 
 export interface RunScoringParams {
   projectId: string;
@@ -62,27 +59,27 @@ export const scoringService = {
   // ==========================================
 
   _getAllRuns(): ScoringRun[] {
-    return storage.get<ScoringRun[]>(SCORING_RUNS_KEY, []);
+    return memoryScoringRuns;
   },
 
   _saveRuns(runs: ScoringRun[]): void {
-    storage.set(SCORING_RUNS_KEY, runs);
+    memoryScoringRuns = runs;
   },
 
   _getAllRules(): ScoringRule[] {
-    return storage.get<ScoringRule[]>(SCORING_RULES_KEY, []);
+    return memoryScoringRules;
   },
 
   _saveRules(rules: ScoringRule[]): void {
-    storage.set(SCORING_RULES_KEY, rules);
+    memoryScoringRules = rules;
   },
 
   _getAllDatasets(): ScoredDataset[] {
-    return storage.get<ScoredDataset[]>(SCORED_DATASETS_KEY, []);
+    return memoryScoredDatasets;
   },
 
   _saveDatasets(datasets: ScoredDataset[]): void {
-    storage.set(SCORED_DATASETS_KEY, datasets);
+    memoryScoredDatasets = datasets;
   },
 
   // ==========================================
@@ -456,8 +453,7 @@ export const scoringService = {
     }
 
     const items = targetRun.rulesSnapshot.items;
-    const vRes = variableService.getVariables(projectId, userId);
-    const variables = vRes.data || [];
+    const variables: Variable[] = variableService.getVariablesSync(projectId);
 
     const existingRules = this._getAllRules().filter(r => r.projectId === projectId);
     const createdRules: ScoringRule[] = [];

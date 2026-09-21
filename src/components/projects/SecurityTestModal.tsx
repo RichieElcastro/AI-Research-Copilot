@@ -30,7 +30,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
   const [isRunning, setIsRunning] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
 
-  const runSecurityAudit = () => {
+  const runSecurityAudit = async () => {
     if (!currentUser) return;
     setIsRunning(true);
     const newResults: TestResult[] = [];
@@ -47,7 +47,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     const targetForeignProjectId = otherUserProjects[0]?.id || 'proj_foreign_test_isolated';
 
     // TEST 1: Attempt to read foreign project via projectService
-    const res1 = projectService.getProject(targetForeignProjectId, currentUser.id);
+    const res1 = await projectService.getProject(targetForeignProjectId, currentUser.id);
     newResults.push({
       name: 'Cross-Tenant Read Project Denial',
       target: `projectService.getProject("${targetForeignProjectId}", "${currentUser.id}")`,
@@ -58,7 +58,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 2: Attempt to read variables belonging to a foreign project
-    const res2 = variableService.getVariables(targetForeignProjectId, currentUser.id);
+    const res2 = await variableService.getVariables(targetForeignProjectId, currentUser.id);
     newResults.push({
       name: 'Cross-Tenant Variables Query Denial',
       target: `variableService.getVariables("${targetForeignProjectId}", "${currentUser.id}")`,
@@ -69,7 +69,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 3: Attempt to inject variable into foreign project
-    const res3 = variableService.createVariable(
+    const res3 = await variableService.createVariable(
       targetForeignProjectId,
       currentUser.id,
       currentUser.name,
@@ -90,7 +90,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 4: Attempt to delete foreign project
-    const res4 = projectService.deleteProject(
+    const res4 = await projectService.deleteProject(
       targetForeignProjectId,
       currentUser.id,
       currentUser.name
@@ -105,7 +105,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 5: Attempt to read instruments of a foreign project
-    const res5 = instrumentService.getInstruments(targetForeignProjectId, currentUser.id);
+    const res5 = await instrumentService.getInstruments(targetForeignProjectId, currentUser.id);
     newResults.push({
       name: 'Cross-Tenant Instruments Access Denial',
       target: `instrumentService.getInstruments("${targetForeignProjectId}", "${currentUser.id}")`,
@@ -116,7 +116,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 6: Attempt to read scales of a foreign project
-    const res6 = scaleService.getScales(targetForeignProjectId, currentUser.id);
+    const res6 = await scaleService.getScales(targetForeignProjectId, currentUser.id);
     newResults.push({
       name: 'Cross-Tenant Scale Library Access Denial',
       target: `scaleService.getScales("${targetForeignProjectId}", "${currentUser.id}")`,
@@ -127,7 +127,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 7: Cross-Tenant Questionnaire Access Denial
-    const res7 = questionnaireService.getByProject(targetForeignProjectId, currentUser.id);
+    const res7 = await questionnaireService.getByProject(targetForeignProjectId, currentUser.id);
     newResults.push({
       name: 'Cross-Tenant Questionnaire Query Denial',
       target: `questionnaireService.getByProject("${targetForeignProjectId}", "${currentUser.id}")`,
@@ -140,14 +140,15 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     // TEST 8: Rejection of Questionnaire Creation from Unapproved Instrument
     const currentProj = allProjects.find(p => p.userId === currentUser.id);
     if (currentProj) {
-      const insts = instrumentService.getInstruments(currentProj.id, currentUser.id);
-      const draftInst = (insts.data || []).find(i => i.status !== 'Approved');
+      const insts = await instrumentService.getInstruments(currentProj.id, currentUser.id);
+      const draftInst = (insts.data || []).find((i: any) => i.status !== 'Approved');
       if (draftInst) {
-        const res8 = questionnaireService.createFromApprovedInstrument(
+        const res8 = await questionnaireService.createFromApprovedInstrument(
           currentProj.id,
           draftInst.id,
           currentUser.id,
-          currentUser.name
+          currentUser.name,
+          { title: 'Draft test questionnaire' }
         );
         newResults.push({
           name: 'Draft/Review Instrument Questionnaire Gate',
@@ -163,7 +164,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
       const allQ = questionnaireService._getAllQuestionnaires();
       const userQ = allQ.find(q => q.projectId === currentProj.id);
       if (userQ && userQ.status !== 'Published') {
-        const res9 = questionnaireService.pause(
+        const res9 = await questionnaireService.pause(
           userQ.id,
           currentProj.id,
           currentUser.id,
@@ -181,7 +182,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     }
 
     // TEST 10: Cross-Tenant Raw Submissions Isolation Check
-    const res10 = submissionService.getProjectSubmissions(targetForeignProjectId, currentUser.id);
+    const res10 = await submissionService.getProjectSubmissions(targetForeignProjectId, currentUser.id);
     newResults.push({
       name: 'Cross-Tenant Raw Submissions Access Denial',
       target: `submissionService.getProjectSubmissions("${targetForeignProjectId}", "${currentUser.id}")`,
@@ -192,7 +193,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 11: Submission Engine Rejection of Unconsented Response
-    const res11 = submissionService.submit({
+    const res11 = await submissionService.submit({
       questionnaireId: 'non_existent_id',
       questionnaireVersionId: 'non_existent_version',
       sessionId: 'test_session_unconsented',
@@ -210,7 +211,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 12: Cross-Tenant Processing Runs Access Denial
-    const res12 = processingService.getRunsByProject(targetForeignProjectId, currentUser.id);
+    const res12 = await processingService.getRunsByProject(targetForeignProjectId, currentUser.id);
     newResults.push({
       name: 'Cross-Tenant Processing Runs Access Denial',
       target: `processingService.getRunsByProject("${targetForeignProjectId}", "${currentUser.id}")`,
@@ -221,7 +222,7 @@ export const SecurityTestModal: React.FC<SecurityTestModalProps> = ({ isOpen, on
     });
 
     // TEST 13: Cross-Tenant Processing Execution Denial
-    const res13 = processingService.runProcessing({
+    const res13 = await processingService.runProcessing({
       projectId: targetForeignProjectId,
       questionnaireId: 'q_fake_id',
       questionnaireVersionId: 'ver_fake_id',

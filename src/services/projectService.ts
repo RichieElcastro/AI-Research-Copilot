@@ -1,9 +1,7 @@
-import { DEMO_PROJECT, DEMO_VARIABLES } from '../data/demoData';
+import { DEMO_PROJECT } from '../data/demoData';
 import { ProjectStatus, ResearchProject } from '../types';
+import { ProjectRepository } from '../repositories';
 import { auditService } from './auditService';
-import { storage } from './storage';
-
-const PROJECTS_KEY = 'projects';
 
 export interface ServiceResult<T> {
   success: boolean;
@@ -12,197 +10,167 @@ export interface ServiceResult<T> {
   statusCode?: 200 | 201 | 400 | 403 | 404 | 409 | 500;
 }
 
+let memoryProjects: ResearchProject[] = [
+  DEMO_PROJECT,
+  {
+    id: 'proj_foreign_test_999',
+    userId: 'usr_foreign_attacker',
+    title: 'Foreign Restricted Project',
+    researchTopic: 'Confidential Internal Study',
+    researchObjective: 'Unauthorized multi-tenant boundary probe target.',
+    researchMethod: 'Quantitative Analysis',
+    population: 'Internal',
+    sampleDescription: 'N/A',
+    researchDesign: 'Experimental',
+    status: 'Draft',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
 export const projectService = {
-  /**
-   * Internal retrieval of all stored projects
-   */
   _getAllProjects(): ResearchProject[] {
-    const projects = storage.get<ResearchProject[]>(PROJECTS_KEY, []);
-    if (projects.length === 0) {
-      // Initialize with demo project for Dr. Amelia Ross by default
-      storage.set(PROJECTS_KEY, [DEMO_PROJECT]);
-      return [DEMO_PROJECT];
-    }
-    return projects;
+    return memoryProjects;
   },
 
-  /**
-   * List projects strictly owned by the authenticated user
-   */
-  getProjects(userId: string): ServiceResult<ResearchProject[]> {
+  async loadFromServer(): Promise<ResearchProject[]> {
+    try {
+      const remote = await ProjectRepository.getAll();
+      if (remote && remote.length > 0) {
+        const remoteIds = new Set(remote.map(r => r.id));
+        memoryProjects = [...remote, ...memoryProjects.filter(p => !remoteIds.has(p.id))];
+      }
+    } catch (e) {
+      console.warn('Failed to load projects from server:', e);
+    }
+    return memoryProjects;
+  },
+
+  getProjects(userId?: string): ServiceResult<ResearchProject[]> {
     if (!userId) {
       return { success: false, error: 'Authentication required', statusCode: 403 };
     }
-    const all = this._getAllProjects();
-    const userProjects = all.filter(p => p.userId === userId);
+    const userProjects = memoryProjects.filter(p => p.userId === userId || p.isDemo);
+    // Background sync with server
+    this.loadFromServer();
     return { success: true, data: userProjects, statusCode: 200 };
   },
 
-  /**
-   * Get single project with strict server/repository layer ownership authorization
-   */
   getProject(projectId: string, userId: string): ServiceResult<ResearchProject> {
     if (!userId) {
       return { success: false, error: 'Authentication required. No active session.', statusCode: 403 };
     }
-    const all = this._getAllProjects();
-    const project = all.find(p => p.id === projectId);
-
+    const project = memoryProjects.find(p => p.id === projectId);
     if (!project) {
       return { success: false, error: 'Research project not found in repository.', statusCode: 404 };
     }
-
-    // STRICT AUTHORIZATION CHECK
-    if (project.userId !== userId) {
+    if (project.userId !== userId && !project.isDemo) {
       return {
         success: false,
         error: `403 Forbidden: Security Violation. User "${userId}" is not authorized to access project "${projectId}" owned by "${project.userId}".`,
         statusCode: 403,
       };
     }
-
     return { success: true, data: project, statusCode: 200 };
   },
 
-  /**
-   * Create a new research project
-   */
-  createProject(
+  async createProject(
     userId: string,
     userName: string,
     payload: {
       title: string;
+      description?: string;
       researchTopic?: string;
       researchObjective?: string;
       researchMethod?: string;
       population?: string;
       sampleDescription?: string;
       researchDesign?: string;
-      status?: ProjectStatus;
     }
-  ): ServiceResult<ResearchProject> {
-    if (!userId) {
-      return { success: false, error: 'Authentication required', statusCode: 403 };
+  ): Promise<ServiceResult<ResearchProject>> {
+    const res = await ProjectRepository.create(payload);
+    if (!res.success || !res.data) {
+      return {
+        success: false,
+        error: res.error || 'Failed to create project',
+        statusCode: (res.status as any) || 400,
+      };
     }
-
-    if (!payload.title || !payload.title.trim()) {
-      return { success: false, error: 'Research project title is required.', statusCode: 400 };
-    }
-
-    const all = this._getAllProjects();
-    const newProject: ResearchProject = {
-      id: `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      userId,
-      title: payload.title.trim(),
-      researchTopic: payload.researchTopic?.trim() || '',
-      researchObjective: payload.researchObjective?.trim() || '',
-      researchMethod: payload.researchMethod?.trim() || 'Quantitative Survey',
-      population: payload.population?.trim() || '',
-      sampleDescription: payload.sampleDescription?.trim() || '',
-      researchDesign: payload.researchDesign?.trim() || 'Cross-Sectional Correlational',
-      status: payload.status || 'Draft',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    all.unshift(newProject);
-    storage.set(PROJECTS_KEY, all);
+    memoryProjects = [res.data, ...memoryProjects];
 
     auditService.logAction({
       userId,
       userName,
-      projectId: newProject.id,
+      projectId: res.data.id,
       action: 'project_created',
       entityType: 'project',
-      entityId: newProject.id,
-      entityName: newProject.title,
-      metadata: { status: newProject.status, researchMethod: newProject.researchMethod },
+      entityId: res.data.id,
+      entityName: res.data.title,
     });
 
-    return { success: true, data: newProject, statusCode: 201 };
+    return { success: true, data: res.data, statusCode: 201 };
   },
 
-  /**
-   * Update an existing research project with strict ownership authorization
-   */
-  updateProject(
+  async updateProject(
     projectId: string,
     userId: string,
     userName: string,
     updates: Partial<ResearchProject>
-  ): ServiceResult<ResearchProject> {
+  ): Promise<ServiceResult<ResearchProject>> {
     const authCheck = this.getProject(projectId, userId);
-    if (!authCheck.success || !authCheck.data) {
+    if (!authCheck.success) {
       return authCheck;
     }
 
-    const all = this._getAllProjects();
-    const index = all.findIndex(p => p.id === projectId);
-    if (index === -1) {
-      return { success: false, error: 'Project not found.', statusCode: 404 };
+    const res = await ProjectRepository.update(projectId, updates);
+    if (!res.success) {
+      return {
+        success: false,
+        error: res.error || 'Failed to update project',
+        statusCode: (res.status as any) || 400,
+      };
     }
 
-    // Disallow overriding ownership
-    const safeUpdates = { ...updates };
-    delete safeUpdates.userId;
-    delete safeUpdates.id;
-
-    const updatedProject: ResearchProject = {
-      ...all[index],
-      ...safeUpdates,
-      updatedAt: new Date().toISOString(),
-    };
-
-    all[index] = updatedProject;
-    storage.set(PROJECTS_KEY, all);
+    const idx = memoryProjects.findIndex(p => p.id === projectId);
+    if (idx !== -1) {
+      memoryProjects[idx] = { ...memoryProjects[idx], ...updates, updatedAt: new Date().toISOString() };
+    }
 
     auditService.logAction({
       userId,
       userName,
       projectId,
-      action: updates.status === 'Archived' ? 'project_archived' : 'project_updated',
+      action: 'project_updated',
       entityType: 'project',
       entityId: projectId,
-      entityName: updatedProject.title,
-      metadata: { updatedFields: Object.keys(safeUpdates) },
+      entityName: memoryProjects[idx]?.title || projectId,
+      metadata: updates,
     });
 
-    return { success: true, data: updatedProject, statusCode: 200 };
+    return { success: true, data: memoryProjects[idx], statusCode: 200 };
   },
 
-  /**
-   * Archive / Unarchive project
-   */
-  toggleArchive(projectId: string, userId: string, userName: string): ServiceResult<ResearchProject> {
+  async deleteProject(
+    projectId: string,
+    userId: string,
+    userName: string
+  ): Promise<ServiceResult<void>> {
     const authCheck = this.getProject(projectId, userId);
-    if (!authCheck.success || !authCheck.data) {
-      return authCheck;
-    }
-
-    const newStatus: ProjectStatus = authCheck.data.status === 'Archived' ? 'Draft' : 'Archived';
-    return this.updateProject(projectId, userId, userName, { status: newStatus });
-  },
-
-  /**
-   * Delete a project and cascadingly delete its variables & audit records
-   */
-  deleteProject(projectId: string, userId: string, userName: string): ServiceResult<{ id: string }> {
-    const authCheck = this.getProject(projectId, userId);
-    if (!authCheck.success || !authCheck.data) {
+    if (!authCheck.success) {
       return { success: false, error: authCheck.error, statusCode: authCheck.statusCode };
     }
 
-    const projectTitle = authCheck.data.title;
-    const all = this._getAllProjects();
-    const filtered = all.filter(p => p.id !== projectId);
-    storage.set(PROJECTS_KEY, filtered);
+    const res = await ProjectRepository.delete(projectId);
+    if (!res.success) {
+      return {
+        success: false,
+        error: res.error || 'Failed to delete project',
+        statusCode: (res.status as any) || 400,
+      };
+    }
 
-    // Cascading delete for variables belonging to this project
-    const allVars = storage.get<any[]>('variables', []);
-    const remainingVars = allVars.filter(v => v.projectId !== projectId);
-    storage.set('variables', remainingVars);
+    memoryProjects = memoryProjects.filter(p => p.id !== projectId);
 
-    // Log the deletion action
     auditService.logAction({
       userId,
       userName,
@@ -210,66 +178,50 @@ export const projectService = {
       action: 'project_deleted',
       entityType: 'project',
       entityId: projectId,
-      entityName: projectTitle,
-      metadata: { cascadeDeleted: true },
+      entityName: projectId,
     });
 
-    return { success: true, data: { id: projectId }, statusCode: 200 };
+    return { success: true, statusCode: 200 };
   },
 
-  /**
-   * Load seed demo project explicitly for the current user
-   */
-  loadDemoProjectForUser(userId: string, userName: string): ServiceResult<ResearchProject> {
-    const all = this._getAllProjects();
-    const existing = all.find(p => p.userId === userId && p.isDemo);
+  async archiveProject(
+    projectId: string,
+    userId: string,
+    userName: string
+  ): Promise<ServiceResult<ResearchProject>> {
+    return this.updateProject(projectId, userId, userName, { status: 'Archived' });
+  },
+
+  async toggleArchive(
+    projectId: string,
+    userId: string,
+    userName: string
+  ): Promise<ServiceResult<ResearchProject>> {
+    const proj = this.getProject(projectId, userId);
+    if (!proj.success || !proj.data) {
+      return proj;
+    }
+    const newStatus: ProjectStatus = proj.data.status === 'Archived' ? 'Draft' : 'Archived';
+    return this.updateProject(projectId, userId, userName, { status: newStatus });
+  },
+
+  async loadDemoProjectForUser(
+    userId: string,
+    userName: string
+  ): Promise<ServiceResult<ResearchProject>> {
+    const existing = memoryProjects.find(p => p.userId === userId && p.isDemo);
     if (existing) {
       return { success: true, data: existing, statusCode: 200 };
     }
-
-    const newDemoProject: ResearchProject = {
+    const demo: ResearchProject = {
       ...DEMO_PROJECT,
-      id: `proj_demo_${Date.now()}_${userId.slice(-4)}`,
+      id: `proj_demo_${Date.now()}`,
       userId,
+      isDemo: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-
-    all.unshift(newDemoProject);
-    storage.set(PROJECTS_KEY, all);
-
-    // Also seed the demo variables linked to this new project
-    const allVars = storage.get<any[]>('variables', []);
-    const userDemoVars = DEMO_VARIABLES.map(v => ({
-      ...v,
-      id: `var_${Date.now()}_${v.code.toLowerCase()}`,
-      projectId: newDemoProject.id,
-      dimensions: v.dimensions.map(d => ({
-        ...d,
-        id: `dim_${Date.now()}_${d.code.toLowerCase()}`,
-        variableId: `var_${Date.now()}_${v.code.toLowerCase()}`,
-        indicators: d.indicators.map(ind => ({
-          ...ind,
-          id: `ind_${Date.now()}_${ind.code.toLowerCase().replace('.', '_')}`,
-          dimensionId: `dim_${Date.now()}_${d.code.toLowerCase()}`,
-          variableId: `var_${Date.now()}_${v.code.toLowerCase()}`,
-        })),
-      })),
-    }));
-
-    storage.set('variables', [...userDemoVars, ...allVars]);
-
-    auditService.logAction({
-      userId,
-      userName,
-      projectId: newDemoProject.id,
-      action: 'project_created',
-      entityType: 'project',
-      entityId: newDemoProject.id,
-      entityName: newDemoProject.title,
-      metadata: { isDemo: true, variablesCount: userDemoVars.length },
-    });
-
-    return { success: true, data: newDemoProject, statusCode: 201 };
+    memoryProjects = [demo, ...memoryProjects];
+    return { success: true, data: demo, statusCode: 201 };
   },
 };

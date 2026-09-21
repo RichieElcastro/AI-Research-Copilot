@@ -47,10 +47,10 @@ export const ScaleManagerModal: React.FC<ScaleManagerModalProps> = ({
   ]);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const loadScales = () => {
+  const loadScales = async () => {
     if (!currentUser) return;
     setLoading(true);
-    const res = scaleService.getScales(projectId, currentUser.id);
+    const res = await scaleService.getScales(projectId, currentUser.id);
     if (res.success && res.data) {
       setScales(res.data);
     } else {
@@ -89,7 +89,7 @@ export const ScaleManagerModal: React.FC<ScaleManagerModalProps> = ({
     setFormError(null);
   };
 
-  const handleCreateScale = (e: React.FormEvent) => {
+  const handleCreateScale = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
 
@@ -101,7 +101,7 @@ export const ScaleManagerModal: React.FC<ScaleManagerModalProps> = ({
     const minVal = Math.min(...options.map(o => o.value));
     const maxVal = Math.max(...options.map(o => o.value));
 
-    const res = scaleService.createScale(projectId, currentUser.id, currentUser.name, {
+    const res = await scaleService.createScale(projectId, currentUser.id, currentUser.name, {
       name: name.trim(),
       scaleType,
       minValue: minVal,
@@ -120,9 +120,9 @@ export const ScaleManagerModal: React.FC<ScaleManagerModalProps> = ({
     }
   };
 
-  const handleArchiveScale = (scaleId: string) => {
+  const handleArchiveScale = async (scaleId: string) => {
     if (!currentUser) return;
-    const res = scaleService.archiveScale(scaleId, projectId, currentUser.id, currentUser.name);
+    const res = await scaleService.archiveScale(scaleId, projectId, currentUser.id, currentUser.name);
     if (res.success) {
       info('Scale Archived', 'Response scale marked as archived. Existing items retain definitions.');
       loadScales();
@@ -132,9 +132,9 @@ export const ScaleManagerModal: React.FC<ScaleManagerModalProps> = ({
     }
   };
 
-  const handleDeleteScale = (scaleId: string) => {
+  const handleDeleteScale = async (scaleId: string) => {
     if (!currentUser) return;
-    const res = scaleService.deleteScale(scaleId, projectId, currentUser.id, currentUser.name);
+    const res = await scaleService.deleteScale(scaleId, projectId, currentUser.id, currentUser.name);
     if (res.success) {
       success('Scale Deleted', 'Custom response scale deleted.');
       loadScales();

@@ -1,8 +1,31 @@
 /**
- * Persistent Storage Layer with Namespacing and Integrity Checks
+ * Local Storage Layer - Strictly restricted to UI preferences and active session tokens.
+ * Domain entities (projects, variables, instruments, questionnaires, submissions, audit logs, etc.)
+ * are exclusively stored on the authoritative server database.
  */
 
 const PREFIX = 'qrp_v1_';
+
+const FORBIDDEN_DOMAIN_KEYS = [
+  'projects',
+  'variables',
+  'response_scales',
+  'instruments',
+  'instrument_items',
+  'instrument_versions',
+  'questionnaires',
+  'questionnaire_versions',
+  'survey_submissions',
+  'audit_logs',
+  'processing_runs',
+  'processed_datasets',
+  'codebooks',
+  'scoring_rules',
+  'scoring_runs',
+  'scored_datasets',
+  'ai_generations',
+  'ai_candidates',
+];
 
 export const storage = {
   get<T>(key: string, defaultValue: T): T {
@@ -19,6 +42,10 @@ export const storage = {
   },
 
   set<T>(key: string, value: T): boolean {
+    if (FORBIDDEN_DOMAIN_KEYS.includes(key)) {
+      console.warn(`[STORAGE INTEGRITY] Attempt to store domain data "${key}" in browser localStorage blocked. Use authoritative server database repositories.`);
+      return false;
+    }
     try {
       localStorage.setItem(`${PREFIX}${key}`, JSON.stringify(value));
       return true;
@@ -33,6 +60,16 @@ export const storage = {
       localStorage.removeItem(`${PREFIX}${key}`);
     } catch (error) {
       console.error(`Storage error removing key "${key}":`, error);
+    }
+  },
+
+  clearDomainData(): void {
+    try {
+      FORBIDDEN_DOMAIN_KEYS.forEach(key => {
+        localStorage.removeItem(`${PREFIX}${key}`);
+      });
+    } catch (error) {
+      console.error('Storage error clearing domain data:', error);
     }
   },
 
@@ -51,3 +88,4 @@ export const storage = {
     }
   }
 };
+

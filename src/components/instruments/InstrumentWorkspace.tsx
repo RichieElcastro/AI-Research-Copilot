@@ -86,7 +86,7 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   // Active view tab: 'items' | 'construct_tree' | 'validation' | 'versions'
   const [activeTab, setActiveTab] = useState<'items' | 'construct_tree' | 'validation' | 'versions'>('items');
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!currentUser) return;
     setLoading(true);
 
@@ -95,30 +95,31 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
       setProject(pRes.data);
     }
 
-    const instRes = instrumentService.getInstrument(instrumentId, projectId, currentUser.id);
+    const instRes = await instrumentService.getInstrument(instrumentId, projectId, currentUser.id);
     if (instRes.success && instRes.data) {
       setInstrument(instRes.data);
     } else {
       error('Failed to load instrument', instRes.error);
+      setLoading(false);
       return;
     }
 
-    const varRes = variableService.getVariables(projectId, currentUser.id);
+    const varRes = await variableService.getVariables(projectId, currentUser.id);
     if (varRes.success && varRes.data) {
       setVariables(varRes.data);
     }
 
-    const scaleRes = scaleService.getScales(projectId, currentUser.id);
+    const scaleRes = await scaleService.getScales(projectId, currentUser.id);
     if (scaleRes.success && scaleRes.data) {
       setScales(scaleRes.data);
     }
 
-    const verRes = instrumentService.getInstrumentVersions(instrumentId, projectId, currentUser.id);
+    const verRes = await instrumentService.getInstrumentVersions(instrumentId, projectId, currentUser.id);
     if (verRes.success && verRes.data) {
       setVersions(verRes.data);
     }
 
-    const valRes = instrumentService.validateInstrument(instrumentId, projectId, currentUser.id);
+    const valRes = await instrumentService.validateInstrument(instrumentId, projectId, currentUser.id);
     if (valRes.success && valRes.data) {
       setValidationReport(valRes.data);
     }
@@ -145,13 +146,13 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   const varsMap = new Map(variables.map(v => [v.id, v]));
 
   // Status Change (Draft <-> Review)
-  const handleStatusChange = (newStatus: InstrumentStatus) => {
+  const handleStatusChange = async (newStatus: InstrumentStatus) => {
     if (!currentUser) return;
     if (isApproved && newStatus !== 'Archived') {
       error('Locked', 'Approved instruments must be branched via "Branch New Version".');
       return;
     }
-    const res = instrumentService.updateInstrument(instrument.id, projectId, currentUser.id, currentUser.name, {
+    const res = await instrumentService.updateInstrument(instrument.id, projectId, currentUser.id, currentUser.name, {
       status: newStatus,
     });
     if (res.success) {
@@ -163,11 +164,11 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   };
 
   // Item Modal Submission
-  const handleItemSubmit = (data: any) => {
+  const handleItemSubmit = async (data: any) => {
     if (!currentUser) return;
 
     if (editingItem) {
-      const res = instrumentService.updateItem(
+      const res = await instrumentService.updateItem(
         editingItem.id,
         instrument.id,
         projectId,
@@ -184,7 +185,7 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
         error('Update Failed', res.error);
       }
     } else {
-      const res = instrumentService.createItem(
+      const res = await instrumentService.createItem(
         instrument.id,
         projectId,
         currentUser.id,
@@ -202,13 +203,13 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   };
 
   // Delete Item
-  const handleDeleteItem = (itemId: string, itemCode: string) => {
+  const handleDeleteItem = async (itemId: string, itemCode: string) => {
     if (!currentUser) return;
     if (isApproved) {
       error('Action Blocked', 'Approved instruments cannot delete items. Branch a new version first.');
       return;
     }
-    const res = instrumentService.deleteItem(itemId, instrument.id, projectId, currentUser.id, currentUser.name);
+    const res = await instrumentService.deleteItem(itemId, instrument.id, projectId, currentUser.id, currentUser.name);
     if (res.success) {
       success('Item Removed', `Item ${itemCode} deleted.`);
       loadData();
@@ -218,13 +219,13 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   };
 
   // Duplicate Item
-  const handleDuplicateItem = (itemId: string) => {
+  const handleDuplicateItem = async (itemId: string) => {
     if (!currentUser) return;
     if (isApproved) {
       error('Action Blocked', 'Approved instruments cannot be edited. Branch a new version first.');
       return;
     }
-    const res = instrumentService.duplicateItem(itemId, instrument.id, projectId, currentUser.id, currentUser.name);
+    const res = await instrumentService.duplicateItem(itemId, instrument.id, projectId, currentUser.id, currentUser.name);
     if (res.success) {
       success('Item Cloned', `Duplicate created: ${res.data?.itemCode}.`);
       loadData();
@@ -234,7 +235,7 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   };
 
   // Move Item Up / Down
-  const handleMoveItem = (index: number, direction: 'up' | 'down') => {
+  const handleMoveItem = async (index: number, direction: 'up' | 'down') => {
     if (!currentUser || isApproved) return;
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= items.length) return;
@@ -244,12 +245,12 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
     ordered.splice(targetIndex, 0, moved);
 
     const orderedIds = ordered.map(it => it.id);
-    const res = instrumentService.reorderItems(
+    const res = await instrumentService.reorderItems(
       instrument.id,
       projectId,
+      orderedIds,
       currentUser.id,
-      currentUser.name,
-      orderedIds
+      currentUser.name
     );
     if (res.success) {
       loadData();
@@ -259,10 +260,10 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   };
 
   // Approve Instrument
-  const handleApprove = (notes?: string) => {
+  const handleApprove = async (notes?: string) => {
     if (!currentUser) return;
     setIsApproving(true);
-    const res = instrumentService.approveInstrument(
+    const res = await instrumentService.approveInstrument(
       instrument.id,
       projectId,
       currentUser.id,
@@ -279,9 +280,9 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   };
 
   // Branch New Version
-  const handleBranchVersion = () => {
+  const handleBranchVersion = async () => {
     if (!currentUser) return;
-    const res = instrumentService.createInstrumentVersion(
+    const res = await instrumentService.createInstrumentVersion(
       instrument.id,
       projectId,
       currentUser.id,
@@ -296,9 +297,9 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   };
 
   // Export AI Context
-  const handleExportAI = () => {
+  const handleExportAI = async () => {
     if (!currentUser) return;
-    const res = instrumentService.exportAIContext(instrument.id, projectId, currentUser.id);
+    const res = await instrumentService.exportAIContext(instrument.id, projectId, currentUser.id);
     if (res.success) {
       setAIContextPayload(res.data);
       setIsAIModalOpen(true);
@@ -308,9 +309,9 @@ export const InstrumentWorkspace: React.FC<InstrumentWorkspaceProps> = ({
   };
 
   // Edit Instrument Specs
-  const handleEditSpecsSubmit = (data: any) => {
+  const handleEditSpecsSubmit = async (data: any) => {
     if (!currentUser) return;
-    const res = instrumentService.updateInstrument(
+    const res = await instrumentService.updateInstrument(
       instrument.id,
       projectId,
       currentUser.id,

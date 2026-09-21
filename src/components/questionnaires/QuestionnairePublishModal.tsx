@@ -67,15 +67,22 @@ export const QuestionnairePublishModal: React.FC<QuestionnairePublishModalProps>
   useEffect(() => {
     if (!currentUser || !isOpen) return;
 
-    const instRes = instrumentService.getInstruments(projectId, currentUser.id);
-    if (instRes.success && instRes.data) {
-      setInstruments(instRes.data);
-      if (!selectedInstrumentId && instRes.data.length > 0) {
-        // Prefer first Approved instrument
-        const firstApproved = instRes.data.find(i => i.status === 'Approved');
-        setSelectedInstrumentId(firstApproved ? firstApproved.id : instRes.data[0].id);
+    let isMounted = true;
+    (async () => {
+      const instRes = await instrumentService.getInstruments(projectId, currentUser.id);
+      if (isMounted && instRes.success && instRes.data) {
+        setInstruments(instRes.data);
+        if (!selectedInstrumentId && instRes.data.length > 0) {
+          // Prefer first Approved instrument
+          const firstApproved = instRes.data.find((i: any) => i.status === 'Approved');
+          setSelectedInstrumentId(firstApproved ? firstApproved.id : instRes.data[0].id);
+        }
       }
-    }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [projectId, currentUser?.id, isOpen]);
 
   // Load versions whenever instrument changes
@@ -85,18 +92,27 @@ export const QuestionnairePublishModal: React.FC<QuestionnairePublishModalProps>
       return;
     }
 
+    let isMounted = true;
     setLoadingVersions(true);
-    const verRes = instrumentService.getInstrumentVersions(
-      selectedInstrumentId,
-      projectId,
-      currentUser.id
-    );
-    if (verRes.success && verRes.data) {
-      setApprovedVersions(verRes.data.filter(v => v.status === 'Approved'));
-    } else {
-      setApprovedVersions([]);
-    }
-    setLoadingVersions(false);
+    (async () => {
+      const verRes = await instrumentService.getInstrumentVersions(
+        selectedInstrumentId,
+        projectId,
+        currentUser.id
+      );
+      if (isMounted) {
+        if (verRes.success && verRes.data) {
+          setApprovedVersions(verRes.data.filter((v: any) => v.status === 'Approved'));
+        } else {
+          setApprovedVersions([]);
+        }
+        setLoadingVersions(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, [selectedInstrumentId, projectId, currentUser?.id]);
 
   // Initialize fields
@@ -185,7 +201,7 @@ export const QuestionnairePublishModal: React.FC<QuestionnairePublishModalProps>
 
       // 1. Create or update settings
       if (!questionnaireId) {
-        const createRes = questionnaireService.createFromApprovedInstrument(
+        const createRes = await questionnaireService.createFromApprovedInstrument(
           projectId,
           selectedInstrument.id,
           currentUser.id,
@@ -211,7 +227,7 @@ export const QuestionnairePublishModal: React.FC<QuestionnairePublishModalProps>
 
         questionnaireId = createRes.data.id;
       } else {
-        const updateRes = questionnaireService.updateSettings(
+        const updateRes = await questionnaireService.updateSettings(
           questionnaireId,
           projectId,
           currentUser.id,
@@ -236,8 +252,13 @@ export const QuestionnairePublishModal: React.FC<QuestionnairePublishModalProps>
         }
       }
 
+      if (!questionnaireId) {
+        error('Publication Failed', 'Missing questionnaire ID.');
+        return;
+      }
+
       // 2. Publish and create immutable QuestionnaireVersion
-      const pubRes = questionnaireService.publish(
+      const pubRes = await questionnaireService.publish(
         questionnaireId,
         projectId,
         currentUser.id,

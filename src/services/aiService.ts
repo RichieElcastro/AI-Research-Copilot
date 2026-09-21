@@ -1,4 +1,4 @@
-import { storage } from './storage';
+import { AIRepository } from '../repositories';
 import { projectService, ServiceResult } from './projectService';
 import { variableService } from './variableService';
 import { instrumentService } from './instrumentService';
@@ -13,24 +13,42 @@ import {
   InstrumentItem,
 } from '../types';
 
-const GENERATIONS_KEY = 'ai_generations';
-const CANDIDATES_KEY = 'ai_candidates';
+let memoryGenerations: AIGeneration[] = [];
+let memoryCandidates: AIGeneratedItem[] = [];
 
 export const aiService = {
   _getAllGenerations(): AIGeneration[] {
-    return storage.get<AIGeneration[]>(GENERATIONS_KEY, []);
+    return memoryGenerations;
   },
 
   _saveGenerations(generations: AIGeneration[]): void {
-    storage.set(GENERATIONS_KEY, generations);
+    memoryGenerations = generations;
   },
 
   _getAllCandidates(): AIGeneratedItem[] {
-    return storage.get<AIGeneratedItem[]>(CANDIDATES_KEY, []);
+    return memoryCandidates;
   },
 
   _saveCandidates(candidates: AIGeneratedItem[]): void {
-    storage.set(CANDIDATES_KEY, candidates);
+    memoryCandidates = candidates;
+  },
+
+  async syncWithServer(projectId: string): Promise<void> {
+    try {
+      const [gens, cands] = await Promise.all([
+        AIRepository.getGenerations(projectId),
+        AIRepository.getCandidates(projectId),
+      ]);
+      if (gens && gens.length > 0) {
+        memoryGenerations = [...gens, ...memoryGenerations.filter(g => g.projectId !== projectId)];
+      }
+      if (cands && cands.length > 0) {
+        const genIds = new Set(gens.map(g => g.id));
+        memoryCandidates = [...cands, ...memoryCandidates.filter(c => !genIds.has(c.generationId))];
+      }
+    } catch (err) {
+      console.warn('[AI SERVICE] Server sync failed:', err);
+    }
   },
 
   /**
@@ -49,7 +67,7 @@ export const aiService = {
     const project = pRes.data;
 
     // 2. Instrument Verification
-    const instRes = instrumentService.getInstrument(payload.instrumentId, payload.projectId, userId);
+    const instRes = await instrumentService.getInstrument(payload.instrumentId, payload.projectId, userId);
     if (!instRes.success || !instRes.data) {
       return { success: false, error: 'Instrument not found.', statusCode: 404 };
     }
@@ -65,21 +83,21 @@ export const aiService = {
     }
 
     // 3. Variable & Construct Context Resolution
-    const varsRes = variableService.getVariables(payload.projectId, userId);
+    const varsRes = await variableService.getVariables(payload.projectId, userId);
     if (!varsRes.success || !varsRes.data) {
       return { success: false, error: 'Failed to retrieve project variables.', statusCode: 500 };
     }
-    const variable = varsRes.data.find((v) => v.id === payload.variableId);
+    const variable = varsRes.data.find((v: any) => v.id === payload.variableId);
     if (!variable) {
       return { success: false, error: 'Selected variable not found.', statusCode: 400 };
     }
 
-    const dimension = variable.dimensions.find((d) => d.id === payload.dimensionId);
-    let indicator = dimension?.indicators.find((ind) => ind.id === payload.indicatorId);
+    const dimension = variable.dimensions.find((d: any) => d.id === payload.dimensionId);
+    let indicator = dimension?.indicators.find((ind: any) => ind.id === payload.indicatorId);
     if (!indicator && payload.indicatorId) {
       // Find across any dimension of this variable
       for (const d of variable.dimensions) {
-        const found = d.indicators.find((i) => i.id === payload.indicatorId);
+        const found = d.indicators.find((i: any) => i.id === payload.indicatorId);
         if (found) {
           indicator = found;
           break;
@@ -101,12 +119,12 @@ export const aiService = {
     let responseScaleOptions: { value: number; label: string }[] = [];
 
     if (payload.responseScaleId) {
-      const scalesRes = scaleService.getScales(payload.projectId, userId);
-      const scale = scalesRes.data?.find((s) => s.id === payload.responseScaleId);
+      const scalesRes = await scaleService.getScales(payload.projectId, userId);
+      const scale = scalesRes.data?.find((s: any) => s.id === payload.responseScaleId);
       if (scale) {
         responseScaleName = scale.name;
         responseScaleType = scale.scaleType;
-        responseScaleOptions = scale.options.map((o) => ({ value: o.value, label: o.label }));
+        responseScaleOptions = scale.options.map((o: any) => ({ value: o.value, label: o.label }));
       }
     }
 
@@ -282,6 +300,11 @@ export const aiService = {
     const allCandidates = this._getAllCandidates();
     this._saveCandidates([...allCandidates, ...candidates]);
 
+    // Authoritative Server Database Persistence
+    AIRepository.saveGeneration(payload.projectId, { generation, candidates }).catch(err => {
+      console.warn('[AI REPOSITORY] Failed to persist generation to server:', err);
+    });
+
     // 9. Audit Log
     auditService.logAction({
       userId,
@@ -365,13 +388,13 @@ export const aiService = {
    * Accept an AI candidate item: converts it into a draft InstrumentItem
    * Preserves full provenance: original text, generation ID, candidate ID
    */
-  acceptCandidate(
+  async acceptCandidate(
     candidateId: string,
     instrumentId: string,
     projectId: string,
     userId: string,
     userName: string
-  ): ServiceResult<{ item: InstrumentItem; candidate: AIGeneratedItem }> {
+  ): Promise<ServiceResult<{ item: InstrumentItem; candidate: AIGeneratedItem }>> {
     const pRes = projectService.getProject(projectId, userId);
     if (!pRes.success) {
       return { success: false, error: pRes.error, statusCode: pRes.statusCode };
@@ -384,7 +407,7 @@ export const aiService = {
     }
     const candidate = candidates[cIndex];
 
-    const instRes = instrumentService.getInstrument(instrumentId, projectId, userId);
+    const instRes = await instrumentService.getInstrument(instrumentId, projectId, userId);
     if (!instRes.success || !instRes.data) {
       return { success: false, error: 'Instrument not found.', statusCode: 404 };
     }
@@ -400,7 +423,7 @@ export const aiService = {
 
     // Auto-generate code e.g. "DMS.09" or "ITEM.01"
     const prefix = instrument.code || 'ITEM';
-    const existingCodes = new Set((instrument.items || []).map((it) => it.itemCode.toUpperCase()));
+    const existingCodes = new Set((instrument.items || []).map((it: any) => it.itemCode.toUpperCase()));
     let nextNum = (instrument.items || []).length + 1;
     let proposedCode = `${prefix}.${String(nextNum).padStart(2, '0')}`;
     while (existingCodes.has(proposedCode.toUpperCase())) {
@@ -411,24 +434,18 @@ export const aiService = {
     const finalText = candidate.finalText || candidate.questionText;
 
     // Create item via instrumentService
-    const createRes = instrumentService.createItem(instrumentId, projectId, userId, userName, {
+    const createRes = await instrumentService.createItem(instrumentId, projectId, userId, userName, {
       questionText: finalText,
       itemCode: proposedCode,
-      itemType: candidate.suggestedItemType || 'Likert',
+      scaleId: candidate.responseScaleId || '',
       variableId: candidate.variableId,
       dimensionId: candidate.dimensionId,
       indicatorId: candidate.indicatorId,
-      responseScaleId: candidate.responseScaleId,
-      required: true,
       reverseCoded: candidate.reverseCoded,
-      source: 'AI Generated',
-      aiCandidateId: candidate.id,
-      aiGenerationId: candidate.generationId,
-      originalAiText: candidate.originalText,
-      modifiedByResearcher: candidate.modifiedByResearcher,
-      notes: candidate.modifiedByResearcher
+      instructions: candidate.modifiedByResearcher
         ? `AI Generated candidate edited by researcher. Original: "${candidate.originalText}"`
         : 'AI Generated candidate accepted into instrument as draft item.',
+      required: true,
     });
 
     if (!createRes.success || !createRes.data) {
@@ -596,17 +613,17 @@ export const aiService = {
   /**
    * Batch accept multiple selected candidates
    */
-  batchAcceptCandidates(
+  async batchAcceptCandidates(
     candidateIds: string[],
     instrumentId: string,
     projectId: string,
     userId: string,
     userName: string
-  ): ServiceResult<{ acceptedCount: number; items: InstrumentItem[] }> {
+  ): Promise<ServiceResult<{ acceptedCount: number; items: InstrumentItem[] }>> {
     const acceptedItems: InstrumentItem[] = [];
 
     for (const cId of candidateIds) {
-      const res = this.acceptCandidate(cId, instrumentId, projectId, userId, userName);
+      const res = await this.acceptCandidate(cId, instrumentId, projectId, userId, userName);
       if (res.success && res.data) {
         acceptedItems.push(res.data.item);
       }
@@ -673,17 +690,13 @@ export const aiService = {
       itemCount: number;
     }[];
   }> {
-    const instRes = instrumentService.getInstrument(instrumentId, projectId, userId);
-    if (!instRes.success || !instRes.data) {
+    const instrument = instrumentService.getInstrumentSync(instrumentId, projectId);
+    if (!instrument) {
       return { success: false, error: 'Instrument not found.', statusCode: 404 };
     }
-    const instrument = instRes.data;
 
-    const varsRes = variableService.getVariables(projectId, userId);
-    if (!varsRes.success || !varsRes.data) {
-      return { success: false, error: 'Failed to fetch variables.', statusCode: 500 };
-    }
-    const variable = varsRes.data.find((v) => v.id === variableId);
+    const variables = variableService.getVariablesSync(projectId);
+    const variable = variables.find((v: any) => v.id === variableId);
     if (!variable) {
       return { success: false, error: 'Variable not found.', statusCode: 404 };
     }
@@ -704,7 +717,7 @@ export const aiService = {
     for (const dim of variable.dimensions) {
       for (const ind of dim.indicators) {
         totalIndicators++;
-        const count = items.filter((it) => it.indicatorId === ind.id).length;
+        const count = items.filter((it: any) => it.indicatorId === ind.id).length;
         if (count > 0) coveredIndicators++;
         details.push({
           dimensionId: dim.id,

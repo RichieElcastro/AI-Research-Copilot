@@ -86,7 +86,7 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
 
 export function verifyProjectAccess(userId: string, projectId: string): boolean {
   if (!userId || !projectId) return false;
-  const row = db.prepare('SELECT id FROM projects WHERE id = ? AND user_id = ?').get(projectId, userId);
+  const row = db.prepare('SELECT id FROM projects WHERE id = ? AND (user_id = ? OR is_demo = 1)').get(projectId, userId);
   return Boolean(row);
 }
 

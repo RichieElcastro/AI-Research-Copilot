@@ -40,12 +40,17 @@ export const InstrumentFormModal: React.FC<InstrumentFormModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     if (currentUser && isOpen) {
-      const vRes = variableService.getVariables(projectId, currentUser.id);
-      if (vRes.success && vRes.data) {
-        setAvailableVariables(vRes.data);
-      }
+      variableService.getVariables(projectId, currentUser.id).then(vRes => {
+        if (isMounted && vRes.success && vRes.data) {
+          setAvailableVariables(vRes.data);
+        }
+      });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [currentUser, isOpen, projectId]);
 
   useEffect(() => {

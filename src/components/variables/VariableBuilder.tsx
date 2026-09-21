@@ -53,10 +53,10 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
     cascadeWarning?: string;
   } | null>(null);
 
-  const loadVariables = () => {
+  const loadVariables = async () => {
     if (!currentUser) return;
     setLoading(true);
-    const res = variableService.getVariables(projectId, currentUser.id);
+    const res = await variableService.getVariables(projectId, currentUser.id);
     if (res.success && res.data) {
       setVariables(res.data);
     } else {
@@ -113,7 +113,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
   // VARIABLE HANDLERS
   // ==========================================
 
-  const handleSaveVariable = (data: {
+  const handleSaveVariable = async (data: {
     name: string;
     code: string;
     variableType: string;
@@ -126,7 +126,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
     if (!currentUser) return;
 
     if (editingVariable) {
-      const res = variableService.updateVariable(
+      const res = await variableService.updateVariable(
         projectId,
         editingVariable.id,
         currentUser.id,
@@ -140,7 +140,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
         error('Update Failed', res.error);
       }
     } else {
-      const res = variableService.createVariable(
+      const res = await variableService.createVariable(
         projectId,
         currentUser.id,
         currentUser.name,
@@ -178,7 +178,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
   // DIMENSION HANDLERS
   // ==========================================
 
-  const handleSaveDimension = (data: {
+  const handleSaveDimension = async (data: {
     name: string;
     code: string;
     definition: string;
@@ -187,7 +187,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
     if (!currentUser || !targetVarForDim) return;
 
     if (editingDimension) {
-      const res = variableService.updateDimension(
+      const res = await variableService.updateDimension(
         projectId,
         targetVarForDim.id,
         editingDimension.id,
@@ -202,7 +202,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
         error('Update Failed', res.error);
       }
     } else {
-      const res = variableService.createDimension(
+      const res = await variableService.createDimension(
         projectId,
         targetVarForDim.id,
         currentUser.id,
@@ -233,13 +233,13 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
     });
   };
 
-  const handleReorderDimension = (
+  const handleReorderDimension = async (
     variable: Variable,
     dimension: Dimension,
     direction: 'up' | 'down'
   ) => {
     if (!currentUser) return;
-    const res = variableService.reorderDimensions(
+    const res = await variableService.reorderDimensions(
       projectId,
       variable.id,
       dimension.id,
@@ -257,7 +257,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
   // INDICATOR HANDLERS
   // ==========================================
 
-  const handleSaveIndicator = (data: {
+  const handleSaveIndicator = async (data: {
     name: string;
     code: string;
     definition: string;
@@ -266,7 +266,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
     if (!currentUser || !targetVarForInd || !targetDimForInd) return;
 
     if (editingIndicator) {
-      const res = variableService.updateIndicator(
+      const res = await variableService.updateIndicator(
         projectId,
         targetVarForInd.id,
         targetDimForInd.id,
@@ -282,7 +282,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
         error('Update Failed', res.error);
       }
     } else {
-      const res = variableService.createIndicator(
+      const res = await variableService.createIndicator(
         projectId,
         targetVarForInd.id,
         targetDimForInd.id,
@@ -314,14 +314,14 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
     });
   };
 
-  const handleReorderIndicator = (
+  const handleReorderIndicator = async (
     variable: Variable,
     dimension: Dimension,
     indicator: Indicator,
     direction: 'up' | 'down'
   ) => {
     if (!currentUser) return;
-    const res = variableService.reorderIndicators(
+    const res = await variableService.reorderIndicators(
       projectId,
       variable.id,
       dimension.id,
@@ -337,11 +337,11 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
   };
 
   // Execute Confirmed Deletion
-  const executeConfirmedDeletion = () => {
+  const executeConfirmedDeletion = async () => {
     if (!currentUser || !deletionTarget) return;
 
     if (deletionTarget.type === 'variable') {
-      const res = variableService.deleteVariable(
+      const res = await variableService.deleteVariable(
         projectId,
         deletionTarget.variable.id,
         currentUser.id,
@@ -354,7 +354,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
         error('Deletion Failed', res.error);
       }
     } else if (deletionTarget.type === 'dimension' && deletionTarget.dimension) {
-      const res = variableService.deleteDimension(
+      const res = await variableService.deleteDimension(
         projectId,
         deletionTarget.variable.id,
         deletionTarget.dimension.id,
@@ -372,7 +372,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
       deletionTarget.dimension &&
       deletionTarget.indicator
     ) {
-      const res = variableService.deleteIndicator(
+      const res = await variableService.deleteIndicator(
         projectId,
         deletionTarget.variable.id,
         deletionTarget.dimension.id,

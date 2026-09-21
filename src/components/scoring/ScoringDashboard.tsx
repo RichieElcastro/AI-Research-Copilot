@@ -86,12 +86,12 @@ export const ScoringDashboard: React.FC<ScoringDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'incomplete' | 'flagged'>('all');
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!currentUser) return;
     setLoading(true);
 
     // 1. Load project variables
-    const vRes = variableService.getVariables(projectId, currentUser.id);
+    const vRes = await variableService.getVariables(projectId, currentUser.id);
     if (vRes.success && vRes.data) {
       setVariables(vRes.data);
     }

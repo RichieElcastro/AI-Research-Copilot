@@ -90,30 +90,32 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
     setError(null);
     setSuccessMessage(null);
 
-    // Fetch variables
-    const varsRes = variableService.getVariables(project.id, userId);
-    if (varsRes.success && varsRes.data) {
-      // Only include variables mapped to this instrument if configured
-      const relevant =
-        instrument.variableIds && instrument.variableIds.length > 0
-          ? varsRes.data.filter((v) => instrument.variableIds.includes(v.id))
-          : varsRes.data;
-      setVariables(relevant);
+    let isMounted = true;
+    Promise.all([
+      variableService.getVariables(project.id, userId),
+      scaleService.getScales(project.id, userId),
+    ]).then(([varsRes, scalesRes]) => {
+      if (!isMounted) return;
 
-      // Default to first variable
-      if (relevant.length > 0 && !selectedVariableId) {
-        setSelectedVariableId(relevant[0].id);
-      }
-    }
+      if (varsRes.success && varsRes.data) {
+        const relevant =
+          instrument.variableIds && instrument.variableIds.length > 0
+            ? varsRes.data.filter((v: Variable) => instrument.variableIds.includes(v.id))
+            : varsRes.data;
+        setVariables(relevant);
 
-    // Fetch response scales
-    const scalesRes = scaleService.getScales(project.id, userId);
-    if (scalesRes.success && scalesRes.data) {
-      setScales(scalesRes.data);
-      if (scalesRes.data.length > 0 && !selectedScaleId) {
-        setSelectedScaleId(scalesRes.data[0].id);
+        if (relevant.length > 0 && !selectedVariableId) {
+          setSelectedVariableId(relevant[0].id);
+        }
       }
-    }
+
+      if (scalesRes.success && scalesRes.data) {
+        setScales(scalesRes.data);
+        if (scalesRes.data.length > 0 && !selectedScaleId) {
+          setSelectedScaleId(scalesRes.data[0].id);
+        }
+      }
+    });
 
     // Default target population from project
     setTargetPopulation(
@@ -122,6 +124,10 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
 
     // Fetch generation history
     loadGenerations();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, project.id, instrument.id, userId]);
 
   // Update dimension and indicator options when variable changes
@@ -252,8 +258,8 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
   };
 
   // Candidate Actions
-  const handleAccept = (candidateId: string) => {
-    const res = aiService.acceptCandidate(candidateId, instrument.id, project.id, userId, userName);
+  const handleAccept = async (candidateId: string) => {
+    const res = await aiService.acceptCandidate(candidateId, instrument.id, project.id, userId, userName);
     if (!res.success || !res.data) {
       setError(res.error || 'Failed to accept candidate.');
       return;
@@ -313,10 +319,10 @@ export const AIGeneratorModal: React.FC<AIGeneratorModalProps> = ({
     setSelectedCandidateIds([]);
   };
 
-  const handleBatchAccept = () => {
+  const handleBatchAccept = async () => {
     if (selectedCandidateIds.length === 0) return;
 
-    const res = aiService.batchAcceptCandidates(
+    const res = await aiService.batchAcceptCandidates(
       selectedCandidateIds,
       instrument.id,
       project.id,

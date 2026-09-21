@@ -371,6 +371,100 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_submissions_participant ON survey_submissions(questionnaire_id, participant_identifier);
     `,
   },
+  {
+    version: 3,
+    name: '003_server_authoritative_persistence_and_lineage',
+    sql: `
+      -- 1. Instruments validation summary
+      ALTER TABLE instruments ADD COLUMN validation_summary_json TEXT;
+
+      -- 2. Instrument Items AI lineage & provenance
+      ALTER TABLE instrument_items ADD COLUMN ai_candidate_id TEXT;
+      ALTER TABLE instrument_items ADD COLUMN ai_generation_id TEXT;
+      ALTER TABLE instrument_items ADD COLUMN original_ai_text TEXT;
+      ALTER TABLE instrument_items ADD COLUMN modified_by_researcher INTEGER DEFAULT 0;
+
+      -- 3. Instrument Versions metadata
+      ALTER TABLE instrument_versions ADD COLUMN approved_by TEXT;
+      ALTER TABLE instrument_versions ADD COLUMN approved_at TEXT;
+      ALTER TABLE instrument_versions ADD COLUMN notes TEXT;
+
+      -- 4. Questionnaire fields for client settings & lifecycle
+      ALTER TABLE questionnaires ADD COLUMN owner_id TEXT;
+      ALTER TABLE questionnaires ADD COLUMN introduction TEXT;
+      ALTER TABLE questionnaires ADD COLUMN consent_statement TEXT;
+      ALTER TABLE questionnaires ADD COLUMN closing_message TEXT;
+      ALTER TABLE questionnaires ADD COLUMN start_date TEXT;
+      ALTER TABLE questionnaires ADD COLUMN end_date TEXT;
+      ALTER TABLE questionnaires ADD COLUMN max_responses INTEGER;
+
+      -- 5. Questionnaire Versions lineage and lock
+      ALTER TABLE questionnaire_versions ADD COLUMN instrument_id TEXT;
+      ALTER TABLE questionnaire_versions ADD COLUMN instrument_version_id TEXT;
+      ALTER TABLE questionnaire_versions ADD COLUMN is_locked INTEGER DEFAULT 1;
+      ALTER TABLE questionnaire_versions ADD COLUMN notes TEXT;
+
+      -- 6. AI Generation Records
+      CREATE TABLE IF NOT EXISTS ai_generations (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        instrument_id TEXT NOT NULL REFERENCES instruments(id) ON DELETE CASCADE,
+        variable_id TEXT NOT NULL,
+        dimension_id TEXT,
+        indicator_id TEXT,
+        model TEXT NOT NULL,
+        prompt_version TEXT NOT NULL,
+        generation_parameters_json TEXT NOT NULL,
+        is_demo_mode INTEGER DEFAULT 0,
+        generated_at TEXT NOT NULL,
+        generated_by TEXT NOT NULL,
+        status TEXT NOT NULL,
+        generation_notes_json TEXT,
+        warnings_json TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_gen_project ON ai_generations(project_id);
+      CREATE INDEX IF NOT EXISTS idx_ai_gen_inst ON ai_generations(instrument_id);
+
+      -- 7. AI Candidate Items
+      CREATE TABLE IF NOT EXISTS ai_candidates (
+        id TEXT PRIMARY KEY,
+        generation_id TEXT NOT NULL REFERENCES ai_generations(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        instrument_id TEXT NOT NULL REFERENCES instruments(id) ON DELETE CASCADE,
+        candidate_id TEXT NOT NULL,
+        question_text TEXT NOT NULL,
+        suggested_item_type TEXT NOT NULL,
+        variable_id TEXT NOT NULL,
+        dimension_id TEXT,
+        indicator_id TEXT,
+        response_scale_id TEXT,
+        reverse_coded INTEGER DEFAULT 0,
+        quality_flags_json TEXT,
+        potential_issues_json TEXT,
+        confidence TEXT,
+        status TEXT NOT NULL,
+        accepted_item_id TEXT,
+        original_text TEXT NOT NULL,
+        final_text TEXT,
+        modified_by_researcher INTEGER DEFAULT 0,
+        duplicate_warning TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_cand_gen ON ai_candidates(generation_id);
+      CREATE INDEX IF NOT EXISTS idx_ai_cand_proj ON ai_candidates(project_id);
+    `,
+  },
+  {
+    version: 4,
+    name: '004_instrument_versions_snapshots_and_summary',
+    sql: `
+      ALTER TABLE instrument_versions ADD COLUMN items_snapshot_json TEXT;
+      ALTER TABLE instrument_versions ADD COLUMN scales_snapshot_json TEXT;
+      ALTER TABLE instrument_versions ADD COLUMN validation_summary_json TEXT;
+      ALTER TABLE instrument_versions ADD COLUMN change_summary TEXT;
+    `,
+  },
 ];
 
 /**

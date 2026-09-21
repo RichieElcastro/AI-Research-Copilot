@@ -75,21 +75,28 @@ export const InstrumentItemModal: React.FC<InstrumentItemModalProps> = ({
 
   // Load project variables and scales
   useEffect(() => {
+    let isMounted = true;
     if (currentUser && isOpen) {
-      const vRes = variableService.getVariables(projectId, currentUser.id);
-      if (vRes.success && vRes.data) {
-        setProjectVariables(vRes.data);
-      }
-
-      const sRes = scaleService.getScales(projectId, currentUser.id);
-      if (sRes.success && sRes.data) {
-        const activeScales = sRes.data.filter(s => !s.isArchived);
-        setScales(activeScales);
-        if (!responseScaleId && activeScales.length > 0) {
-          setResponseScaleId(activeScales[0].id);
+      Promise.all([
+        variableService.getVariables(projectId, currentUser.id),
+        scaleService.getScales(projectId, currentUser.id),
+      ]).then(([vRes, sRes]) => {
+        if (!isMounted) return;
+        if (vRes.success && vRes.data) {
+          setProjectVariables(vRes.data);
         }
-      }
+        if (sRes.success && sRes.data) {
+          const activeScales = sRes.data.filter((s: any) => !s.isArchived);
+          setScales(activeScales);
+          if (!responseScaleId && activeScales.length > 0) {
+            setResponseScaleId(activeScales[0].id);
+          }
+        }
+      });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [currentUser, isOpen, projectId]);
 
   // Filter variables mapped to this instrument

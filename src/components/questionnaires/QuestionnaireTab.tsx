@@ -58,18 +58,18 @@ export const QuestionnaireTab: React.FC<QuestionnaireTabProps> = ({
   const [versionsMap, setVersionsMap] = useState<Record<string, QuestionnaireVersion[]>>({});
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!currentUser) return;
     setLoading(true);
 
-    const qRes = questionnaireService.getByProject(projectId, currentUser.id);
+    const qRes = await questionnaireService.getByProject(projectId, currentUser.id);
     if (qRes.success && qRes.data) {
       setQuestionnaires(qRes.data);
 
       // Load versions for all questionnaires
       const newVersionsMap: Record<string, QuestionnaireVersion[]> = {};
       for (const q of qRes.data) {
-        const vRes = questionnaireService.getVersions(q.id, projectId, currentUser.id);
+        const vRes = await questionnaireService.getVersions(q.id, projectId, currentUser.id);
         if (vRes.success && vRes.data) {
           newVersionsMap[q.id] = vRes.data;
         }
@@ -77,7 +77,7 @@ export const QuestionnaireTab: React.FC<QuestionnaireTabProps> = ({
       setVersionsMap(newVersionsMap);
     }
 
-    const instRes = instrumentService.getInstruments(projectId, currentUser.id);
+    const instRes = await instrumentService.getInstruments(projectId, currentUser.id);
     if (instRes.success && instRes.data) {
       setInstruments(instRes.data);
     }
@@ -98,9 +98,9 @@ export const QuestionnaireTab: React.FC<QuestionnaireTabProps> = ({
   const approvedInstruments = instruments.filter(i => i.status === 'Approved');
 
   // Lifecycle handlers
-  const handlePause = (q: Questionnaire) => {
+  const handlePause = async (q: Questionnaire) => {
     if (!currentUser) return;
-    const res = questionnaireService.pause(
+    const res = await questionnaireService.pause(
       q.id,
       projectId,
       currentUser.id,
@@ -115,9 +115,9 @@ export const QuestionnaireTab: React.FC<QuestionnaireTabProps> = ({
     }
   };
 
-  const handleResume = (q: Questionnaire) => {
+  const handleResume = async (q: Questionnaire) => {
     if (!currentUser) return;
-    const res = questionnaireService.resume(q.id, projectId, currentUser.id, currentUser.name);
+    const res = await questionnaireService.resume(q.id, projectId, currentUser.id, currentUser.name);
     if (res.success) {
       success('Survey Resumed', `"${q.title}" is now active and accepting submissions.`);
       loadData();
@@ -126,9 +126,9 @@ export const QuestionnaireTab: React.FC<QuestionnaireTabProps> = ({
     }
   };
 
-  const handleClose = (q: Questionnaire) => {
+  const handleClose = async (q: Questionnaire) => {
     if (!currentUser) return;
-    const res = questionnaireService.close(
+    const res = await questionnaireService.close(
       q.id,
       projectId,
       currentUser.id,
@@ -143,9 +143,9 @@ export const QuestionnaireTab: React.FC<QuestionnaireTabProps> = ({
     }
   };
 
-  const handleArchive = (q: Questionnaire) => {
+  const handleArchive = async (q: Questionnaire) => {
     if (!currentUser) return;
-    const res = questionnaireService.archive(q.id, projectId, currentUser.id, currentUser.name);
+    const res = await questionnaireService.archive(q.id, projectId, currentUser.id, currentUser.name);
     if (res.success) {
       success('Questionnaire Archived', `"${q.title}" has been moved to archive.`);
       loadData();

@@ -2,9 +2,12 @@ import { apiClient } from '../services/apiClient';
 import {
   ResearchProject,
   Variable,
+  Dimension,
+  Indicator,
   ResponseScale,
   Instrument,
   InstrumentItem,
+  InstrumentVersion,
   Questionnaire,
   QuestionnaireVersion,
   SurveySubmission,
@@ -28,150 +31,347 @@ export const ProjectRepository = {
     return res.success && res.data ? res.data : [];
   },
 
-  async getById(id: string): Promise<ResearchProject | null> {
+  async getById(id: string): Promise<{ success: boolean; data?: ResearchProject; error?: string; status: number }> {
     const res = await apiClient.fetch<ResearchProject>(`/api/projects/${id}`);
-    return res.success && res.data ? res.data : null;
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async create(payload: Partial<ResearchProject>): Promise<ResearchProject | null> {
+  async create(payload: Partial<ResearchProject>): Promise<{ success: boolean; data?: ResearchProject; error?: string; status: number }> {
     const res = await apiClient.fetch<ResearchProject>('/api/projects', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    return res.success && res.data ? res.data : null;
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async update(id: string, payload: Partial<ResearchProject>): Promise<ResearchProject | null> {
+  async update(id: string, payload: Partial<ResearchProject>): Promise<{ success: boolean; data?: ResearchProject; error?: string; status: number }> {
     const res = await apiClient.fetch<ResearchProject>(`/api/projects/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
-    return res.success && res.data ? res.data : null;
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async delete(id: string): Promise<boolean> {
+  async delete(id: string): Promise<{ success: boolean; error?: string; status: number }> {
     const res = await apiClient.fetch(`/api/projects/${id}`, { method: 'DELETE' });
-    return res.success;
+    return { success: res.success, error: res.error, status: res.status };
   },
 };
 
 export const VariableRepository = {
-  async getByProject(projectId: string): Promise<Variable[]> {
+  async getByProject(projectId: string): Promise<{ success: boolean; data?: Variable[]; error?: string; status: number }> {
     const res = await apiClient.fetch<Variable[]>(`/api/projects/${projectId}/variables`);
-    return res.success && res.data ? res.data : [];
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async create(projectId: string, payload: any): Promise<Variable | null> {
+  async create(projectId: string, payload: any): Promise<{ success: boolean; data?: Variable; error?: string; status: number }> {
     const res = await apiClient.fetch<Variable>(`/api/projects/${projectId}/variables`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    return res.success && res.data ? res.data : null;
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async delete(projectId: string, id: string): Promise<boolean> {
+  async update(projectId: string, id: string, payload: any): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/variables/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async delete(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
     const res = await apiClient.fetch(`/api/projects/${projectId}/variables/${id}`, { method: 'DELETE' });
-    return res.success;
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async addDimension(projectId: string, variableId: string, payload: any): Promise<{ success: boolean; data?: Dimension; error?: string; status: number }> {
+    const res = await apiClient.fetch<Dimension>(`/api/projects/${projectId}/variables/${variableId}/dimensions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return { success: res.success, data: res.data, error: res.error, status: res.status };
+  },
+
+  async updateDimension(projectId: string, id: string, payload: any): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/dimensions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async deleteDimension(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/dimensions/${id}`, { method: 'DELETE' });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async addIndicator(projectId: string, dimensionId: string, payload: any): Promise<{ success: boolean; data?: Indicator; error?: string; status: number }> {
+    const res = await apiClient.fetch<Indicator>(`/api/projects/${projectId}/dimensions/${dimensionId}/indicators`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return { success: res.success, data: res.data, error: res.error, status: res.status };
+  },
+
+  async updateIndicator(projectId: string, id: string, payload: any): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/indicators/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async deleteIndicator(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/indicators/${id}`, { method: 'DELETE' });
+    return { success: res.success, error: res.error, status: res.status };
   },
 };
 
 export const ScaleRepository = {
-  async getByProject(projectId: string): Promise<ResponseScale[]> {
+  async getByProject(projectId: string): Promise<{ success: boolean; data?: ResponseScale[]; error?: string; status: number }> {
     const res = await apiClient.fetch<ResponseScale[]>(`/api/projects/${projectId}/scales`);
-    return res.success && res.data ? res.data : [];
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async create(projectId: string, payload: any): Promise<ResponseScale | null> {
+  async create(projectId: string, payload: any): Promise<{ success: boolean; data?: ResponseScale; error?: string; status: number }> {
     const res = await apiClient.fetch<ResponseScale>(`/api/projects/${projectId}/scales`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    return res.success && res.data ? res.data : null;
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
+  },
+
+  async update(projectId: string, id: string, payload: any): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/scales/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async delete(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/scales/${id}`, { method: 'DELETE' });
+    return { success: res.success, error: res.error, status: res.status };
   },
 };
 
 export const InstrumentRepository = {
-  async getByProject(projectId: string): Promise<Instrument[]> {
+  async getByProject(projectId: string): Promise<{ success: boolean; data?: Instrument[]; error?: string; status: number }> {
     const res = await apiClient.fetch<Instrument[]>(`/api/projects/${projectId}/instruments`);
-    return res.success && res.data ? res.data : [];
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async getById(projectId: string, id: string): Promise<(Instrument & { items: InstrumentItem[] }) | null> {
+  async getById(projectId: string, id: string): Promise<{ success: boolean; data?: (Instrument & { items: InstrumentItem[] }); error?: string; status: number }> {
     const res = await apiClient.fetch<Instrument & { items: InstrumentItem[] }>(`/api/projects/${projectId}/instruments/${id}`);
-    return res.success && res.data ? res.data : null;
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async create(projectId: string, payload: any): Promise<Instrument | null> {
+  async create(projectId: string, payload: any): Promise<{ success: boolean; data?: Instrument; error?: string; status: number }> {
     const res = await apiClient.fetch<Instrument>(`/api/projects/${projectId}/instruments`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    return res.success && res.data ? res.data : null;
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async approve(projectId: string, id: string): Promise<{ success: boolean; versionId?: string; error?: string }> {
-    const res = await apiClient.fetch<{ versionId: string }>(`/api/projects/${projectId}/instruments/${id}/approve`, {
-      method: 'POST',
+  async update(projectId: string, id: string, payload: any): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/instruments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     });
-    return { success: res.success, versionId: res.data?.versionId, error: res.error };
+    return { success: res.success, error: res.error, status: res.status };
   },
 
-  async addItem(projectId: string, instrumentId: string, item: any): Promise<InstrumentItem | null> {
+  async delete(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/instruments/${id}`, { method: 'DELETE' });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async addItem(projectId: string, instrumentId: string, item: any): Promise<{ success: boolean; data?: InstrumentItem; error?: string; status: number }> {
     const res = await apiClient.fetch<InstrumentItem>(`/api/projects/${projectId}/instruments/${instrumentId}/items`, {
       method: 'POST',
       body: JSON.stringify(item),
     });
-    return res.success && res.data ? res.data : null;
+    return { success: res.success, data: res.data, error: res.error, status: res.status };
   },
 
-  async deleteItem(projectId: string, instrumentId: string, itemId: string): Promise<boolean> {
+  async updateItem(projectId: string, instrumentId: string, itemId: string, item: any): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/instruments/${instrumentId}/items/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(item),
+    });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async deleteItem(projectId: string, instrumentId: string, itemId: string): Promise<{ success: boolean; error?: string; status: number }> {
     const res = await apiClient.fetch(`/api/projects/${projectId}/instruments/${instrumentId}/items/${itemId}`, {
       method: 'DELETE',
     });
-    return res.success;
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async approve(projectId: string, id: string): Promise<{ success: boolean; versionId?: string; versionNumber?: number; version?: string; error?: string; status: number }> {
+    const res = await apiClient.fetch<{ versionId: string; versionNumber?: number; version?: string }>(`/api/projects/${projectId}/instruments/${id}/approve`, {
+      method: 'POST',
+    });
+    return {
+      success: res.success,
+      versionId: res.data?.versionId,
+      versionNumber: res.data?.versionNumber,
+      version: res.data?.version,
+      error: res.error,
+      status: res.status,
+    };
+  },
+
+  async branch(projectId: string, id: string): Promise<{ success: boolean; status?: string; version?: string; error?: string; statusCode: number }> {
+    const res = await apiClient.fetch<{ status: string; version: string }>(`/api/projects/${projectId}/instruments/${id}/branch`, {
+      method: 'POST',
+    });
+    return {
+      success: res.success,
+      status: res.data?.status,
+      version: res.data?.version,
+      error: res.error,
+      statusCode: res.status,
+    };
+  },
+
+  async getVersions(projectId: string, id: string): Promise<InstrumentVersion[]> {
+    const res = await apiClient.fetch<InstrumentVersion[]>(`/api/projects/${projectId}/instruments/${id}/versions`);
+    return res.success && res.data ? res.data : [];
   },
 };
 
 export const QuestionnaireRepository = {
-  async getByProject(projectId: string): Promise<Questionnaire[]> {
+  async getByProject(projectId: string): Promise<{ success: boolean; data?: Questionnaire[]; error?: string; status: number }> {
     const res = await apiClient.fetch<Questionnaire[]>(`/api/projects/${projectId}/questionnaires`);
-    return res.success && res.data ? res.data : [];
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async getVersions(projectId: string, id: string): Promise<QuestionnaireVersion[]> {
+  async getById(projectId: string, id: string): Promise<{ success: boolean; data?: Questionnaire; error?: string; status: number }> {
+    const res = await apiClient.fetch<Questionnaire>(`/api/projects/${projectId}/questionnaires/${id}`);
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
+  },
+
+  async getVersions(projectId: string, id: string): Promise<{ success: boolean; data?: QuestionnaireVersion[]; error?: string; status: number }> {
     const res = await apiClient.fetch<QuestionnaireVersion[]>(`/api/projects/${projectId}/questionnaires/${id}/versions`);
-    return res.success && res.data ? res.data : [];
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async create(projectId: string, payload: any): Promise<Questionnaire | null> {
+  async create(projectId: string, payload: any): Promise<{ success: boolean; data?: Questionnaire; error?: string; status: number }> {
     const res = await apiClient.fetch<Questionnaire>(`/api/projects/${projectId}/questionnaires`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    return res.success && res.data ? res.data : null;
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 
-  async publish(projectId: string, id: string, payload: any): Promise<{ success: boolean; versionId?: string; error?: string }> {
+  async update(projectId: string, id: string, payload: any): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/questionnaires/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async delete(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/questionnaires/${id}`, { method: 'DELETE' });
+    return { success: res.success, error: res.error, status: res.status };
+  },
+
+  async publish(projectId: string, id: string, payload: any): Promise<{ success: boolean; versionId?: string; error?: string; status: number }> {
     const res = await apiClient.fetch<{ versionId: string }>(`/api/projects/${projectId}/questionnaires/${id}/publish`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    return { success: res.success, versionId: res.data?.versionId, error: res.error };
+    return { success: res.success, versionId: res.data?.versionId, error: res.error, status: res.status };
   },
 
-  async pause(projectId: string, id: string): Promise<boolean> {
+  async pause(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
     const res = await apiClient.fetch(`/api/projects/${projectId}/questionnaires/${id}/pause`, { method: 'POST' });
-    return res.success;
+    return { success: res.success, error: res.error, status: res.status };
   },
 
-  async resume(projectId: string, id: string): Promise<boolean> {
+  async resume(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
     const res = await apiClient.fetch(`/api/projects/${projectId}/questionnaires/${id}/resume`, { method: 'POST' });
-    return res.success;
+    return { success: res.success, error: res.error, status: res.status };
   },
 
-  async close(projectId: string, id: string): Promise<boolean> {
+  async close(projectId: string, id: string): Promise<{ success: boolean; error?: string; status: number }> {
     const res = await apiClient.fetch(`/api/projects/${projectId}/questionnaires/${id}/close`, { method: 'POST' });
-    return res.success;
+    return { success: res.success, error: res.error, status: res.status };
   },
 };
 
@@ -276,8 +476,55 @@ export const ScoringRepository = {
 };
 
 export const AuditRepository = {
-  async getByProject(projectId: string): Promise<AuditLog[]> {
+  async getByProject(projectId: string): Promise<{ success: boolean; data?: AuditLog[]; error?: string; status: number }> {
     const res = await apiClient.fetch<AuditLog[]>(`/api/projects/${projectId}/audit-logs`);
-    return res.success && res.data ? res.data : [];
+    return {
+      success: res.success,
+      data: res.data || [],
+      error: res.error,
+      status: res.status,
+    };
+  },
+
+  async log(projectId: string, payload: any): Promise<{ success: boolean; data?: AuditLog; error?: string; status: number }> {
+    const res = await apiClient.fetch<AuditLog>(`/api/projects/${projectId}/audit-logs`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return {
+      success: res.success,
+      data: res.data,
+      error: res.error,
+      status: res.status,
+    };
   },
 };
+
+export const AIRepository = {
+  async getGenerations(projectId: string): Promise<any[]> {
+    const res = await apiClient.fetch<any[]>(`/api/projects/${projectId}/ai/generations`);
+    return res.success && res.data ? res.data : [];
+  },
+
+  async saveGeneration(projectId: string, payload: any): Promise<{ success: boolean; generationId?: string; error?: string }> {
+    const res = await apiClient.fetch<{ generationId: string }>(`/api/projects/${projectId}/ai/generations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return { success: res.success, generationId: res.data?.generationId, error: res.error };
+  },
+
+  async getCandidates(projectId: string): Promise<any[]> {
+    const res = await apiClient.fetch<any[]>(`/api/projects/${projectId}/ai/candidates`);
+    return res.success && res.data ? res.data : [];
+  },
+
+  async updateCandidate(projectId: string, candidateId: string, payload: any): Promise<boolean> {
+    const res = await apiClient.fetch(`/api/projects/${projectId}/ai/candidates/${candidateId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return res.success;
+  },
+};
+

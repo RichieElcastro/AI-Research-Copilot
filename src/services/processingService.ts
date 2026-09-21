@@ -36,15 +36,11 @@ import {
 import { auditService } from './auditService';
 import { projectService, ServiceResult } from './projectService';
 import { questionnaireService } from './questionnaireService';
-import { storage } from './storage';
 import { submissionService } from './submissionService';
 
-/**
- * Storage keys matching qrp_v1_* namespacing convention
- */
-const PROCESSING_RUNS_KEY = 'processing_runs';
-const PROCESSED_DATASETS_KEY = 'processed_datasets';
-const CODEBOOKS_KEY = 'codebooks';
+let memoryRuns: ProcessingRun[] = [];
+let memoryDatasets: ProcessedDataset[] = [];
+let memoryCodebooks: Codebook[] = [];
 
 export interface RunProcessingParams {
   projectId: string;
@@ -63,27 +59,27 @@ export const processingService = {
   // ==========================================
 
   _getAllRuns(): ProcessingRun[] {
-    return storage.get<ProcessingRun[]>(PROCESSING_RUNS_KEY, []);
+    return memoryRuns;
   },
 
   _saveRuns(runs: ProcessingRun[]): void {
-    storage.set(PROCESSING_RUNS_KEY, runs);
+    memoryRuns = runs;
   },
 
   _getAllDatasets(): ProcessedDataset[] {
-    return storage.get<ProcessedDataset[]>(PROCESSED_DATASETS_KEY, []);
+    return memoryDatasets;
   },
 
   _saveDatasets(datasets: ProcessedDataset[]): void {
-    storage.set(PROCESSED_DATASETS_KEY, datasets);
+    memoryDatasets = datasets;
   },
 
   _getAllCodebooks(): Codebook[] {
-    return storage.get<Codebook[]>(CODEBOOKS_KEY, []);
+    return memoryCodebooks;
   },
 
   _saveCodebooks(codebooks: Codebook[]): void {
-    storage.set(CODEBOOKS_KEY, codebooks);
+    memoryCodebooks = codebooks;
   },
 
   // ==========================================

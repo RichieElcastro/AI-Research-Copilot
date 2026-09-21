@@ -348,7 +348,7 @@ apiRouter.post('/public/surveys/:slug/submissions', publicSubmissionRateLimiter,
 // 3. RESEARCHER PROJECT ENDPOINTS (AUTH REQUIRED)
 // ==========================================
 
-// List projects owned by authenticated researcher
+// List projects owned by authenticated researcher or system demo projects
 apiRouter.get('/projects', authenticate, (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user!.id;
   const rows = db.prepare(`
@@ -357,8 +357,8 @@ apiRouter.get('/projects', authenticate, (req: AuthenticatedRequest, res: Respon
            population, sample_description as sampleDescription, research_design as researchDesign,
            status, is_demo as isDemo, created_at as createdAt, updated_at as updatedAt
     FROM projects
-    WHERE user_id = ?
-    ORDER BY created_at DESC
+    WHERE user_id = ? OR is_demo = 1
+    ORDER BY is_demo DESC, created_at DESC
   `).all(userId) as any[];
 
   const projects = rows.map(p => ({ ...p, isDemo: Boolean(p.isDemo) }));
@@ -459,6 +459,11 @@ apiRouter.put('/projects/:projectId', authenticate, requireProjectAccess, (req: 
 // Delete project
 apiRouter.delete('/projects/:projectId', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { projectId } = req.params;
+
+  const project = db.prepare('SELECT is_demo FROM projects WHERE id = ?').get(projectId) as any;
+  if (project?.is_demo) {
+    return res.status(403).json({ success: false, error: 'Cannot delete system demo project.' });
+  }
 
   // Check if project has active questionnaires or submissions
   const subCount = db.prepare('SELECT COUNT(*) as c FROM survey_submissions WHERE project_id = ?').get(projectId) as { c: number };
@@ -615,6 +620,25 @@ apiRouter.post('/projects/:projectId/dimensions', authenticate, requireProjectAc
   res.status(201).json({ success: true, data: { id, variableId, projectId, name, code, definition, description, orderIndex: orderIndex || 1, indicators: [], createdAt: now, updatedAt: now } });
 });
 
+apiRouter.put('/projects/:projectId/dimensions/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { name, code, definition, description, orderIndex } = req.body;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE dimensions SET
+      name = COALESCE(?, name),
+      code = COALESCE(?, code),
+      definition = COALESCE(?, definition),
+      description = COALESCE(?, description),
+      order_index = COALESCE(?, order_index),
+      updated_at = ?
+    WHERE id = ?
+  `).run(name, code, definition, description, orderIndex, now, id);
+
+  res.json({ success: true, message: 'Dimension updated' });
+});
+
 apiRouter.delete('/projects/:projectId/dimensions/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   db.prepare('DELETE FROM dimensions WHERE id = ?').run(id);
@@ -639,6 +663,25 @@ apiRouter.post('/projects/:projectId/indicators', authenticate, requireProjectAc
   `).run(id, dimensionId, variableId, projectId, name.trim(), code || 'IND', definition || null, description || null, orderIndex || 1, now, now);
 
   res.status(201).json({ success: true, data: { id, dimensionId, variableId, projectId, name, code, definition, description, orderIndex: orderIndex || 1, createdAt: now, updatedAt: now } });
+});
+
+apiRouter.put('/projects/:projectId/indicators/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { name, code, definition, description, orderIndex } = req.body;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE indicators SET
+      name = COALESCE(?, name),
+      code = COALESCE(?, code),
+      definition = COALESCE(?, definition),
+      description = COALESCE(?, description),
+      order_index = COALESCE(?, order_index),
+      updated_at = ?
+    WHERE id = ?
+  `).run(name, code, definition, description, orderIndex, now, id);
+
+  res.json({ success: true, message: 'Indicator updated' });
 });
 
 apiRouter.delete('/projects/:projectId/indicators/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
@@ -710,6 +753,33 @@ apiRouter.post('/projects/:projectId/scales', authenticate, requireProjectAccess
       updatedAt: now,
     },
   });
+});
+
+apiRouter.put('/projects/:projectId/scales/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { name, scaleType, minValue, maxValue, options } = req.body;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE response_scales SET
+      name = COALESCE(?, name),
+      scale_type = COALESCE(?, scale_type),
+      min_value = COALESCE(?, min_value),
+      max_value = COALESCE(?, max_value),
+      options_json = COALESCE(?, options_json),
+      updated_at = ?
+    WHERE id = ?
+  `).run(name, scaleType, minValue, maxValue, options ? JSON.stringify(options) : null, now, id);
+
+  res.json({ success: true, message: 'Response scale updated' });
+});
+
+apiRouter.delete('/projects/:projectId/scales/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  // Soft archive to protect items referencing this scale
+  const now = new Date().toISOString();
+  db.prepare('UPDATE response_scales SET is_archived = 1, updated_at = ? WHERE id = ?').run(now, id);
+  res.json({ success: true, message: 'Response scale safely archived' });
 });
 
 // ==========================================
@@ -807,9 +877,60 @@ apiRouter.post('/projects/:projectId/instruments', authenticate, requireProjectA
   });
 });
 
+apiRouter.put('/projects/:projectId/instruments/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const inst = db.prepare('SELECT status FROM instruments WHERE id = ?').get(id) as any;
+  if (!inst) return res.status(404).json({ success: false, error: 'Instrument not found' });
+  if (inst.status === 'Approved') {
+    return res.status(403).json({ success: false, error: 'Approved instruments are immutable and cannot be modified. Branch a new version instead.' });
+  }
+
+  const { name, code, description, purpose, sourceType, sourceReference, variableIds } = req.body;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE instruments SET
+      name = COALESCE(?, name),
+      code = COALESCE(?, code),
+      description = COALESCE(?, description),
+      purpose = COALESCE(?, purpose),
+      source_type = COALESCE(?, source_type),
+      source_reference = COALESCE(?, source_reference),
+      variable_ids_json = COALESCE(?, variable_ids_json),
+      updated_at = ?
+    WHERE id = ?
+  `).run(name, code, description, purpose, sourceType, sourceReference, variableIds ? JSON.stringify(variableIds) : null, now, id);
+
+  res.json({ success: true, message: 'Instrument updated' });
+});
+
+apiRouter.delete('/projects/:projectId/instruments/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const inst = db.prepare('SELECT status FROM instruments WHERE id = ?').get(id) as any;
+  if (!inst) return res.status(404).json({ success: false, error: 'Instrument not found' });
+  if (inst.status === 'Approved') {
+    return res.status(403).json({ success: false, error: 'Approved instruments cannot be deleted. Archive the instrument instead.' });
+  }
+
+  // Check if linked to questionnaires
+  const qCount = db.prepare('SELECT COUNT(*) as c FROM questionnaires WHERE instrument_id = ?').get(id) as { c: number };
+  if (qCount.c > 0) {
+    return res.status(400).json({ success: false, error: 'Cannot delete instrument linked to existing questionnaires.' });
+  }
+
+  db.prepare('DELETE FROM instruments WHERE id = ?').run(id);
+  res.json({ success: true, message: 'Instrument deleted' });
+});
+
 apiRouter.post('/projects/:projectId/instruments/:id/items', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { projectId, id } = req.params;
-  const { itemCode, itemNumber, questionText, itemType, variableId, dimensionId, indicatorId, responseScaleId, required, reverseCoded, source, notes } = req.body;
+  const inst = db.prepare('SELECT status FROM instruments WHERE id = ?').get(id) as any;
+  if (!inst) return res.status(404).json({ success: false, error: 'Instrument not found' });
+  if (inst.status === 'Approved') {
+    return res.status(403).json({ success: false, error: 'Cannot add items to an approved instrument. Approved instruments are locked.' });
+  }
+
+  const { itemCode, itemNumber, questionText, itemType, variableId, dimensionId, indicatorId, responseScaleId, required, reverseCoded, source, notes, aiCandidateId, aiGenerationId, aiRationale } = req.body;
 
   if (!itemCode || !questionText) {
     return res.status(400).json({ success: false, error: 'Item code and question text are required' });
@@ -819,9 +940,18 @@ apiRouter.post('/projects/:projectId/instruments/:id/items', authenticate, requi
   const now = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO instrument_items (id, instrument_id, project_id, item_code, item_number, question_text, item_type, variable_id, dimension_id, indicator_id, response_scale_id, required, reverse_coded, status, source, notes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
-  `).run(itemId, id, projectId, itemCode.trim(), itemNumber || 1, questionText.trim(), itemType || 'Likert', variableId || null, dimensionId || null, indicatorId || null, responseScaleId || null, required ? 1 : 0, reverseCoded ? 1 : 0, source || null, notes || null, now, now);
+    INSERT INTO instrument_items (
+      id, instrument_id, project_id, item_code, item_number, question_text, item_type,
+      variable_id, dimension_id, indicator_id, response_scale_id, required, reverse_coded,
+      status, source, notes, ai_candidate_id, ai_generation_id, ai_rationale, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    itemId, id, projectId, itemCode.trim(), itemNumber || 1, questionText.trim(), itemType || 'Likert',
+    variableId || null, dimensionId || null, indicatorId || null, responseScaleId || null,
+    required ? 1 : 0, reverseCoded ? 1 : 0, source || null, notes || null,
+    aiCandidateId || null, aiGenerationId || null, aiRationale || null, now, now
+  );
 
   res.status(201).json({
     success: true,
@@ -842,21 +972,70 @@ apiRouter.post('/projects/:projectId/instruments/:id/items', authenticate, requi
       status: 'active',
       source,
       notes,
+      aiCandidateId,
+      aiGenerationId,
+      aiRationale,
       createdAt: now,
       updatedAt: now,
     },
   });
 });
 
+apiRouter.put('/projects/:projectId/instruments/:id/items/:itemId', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id, itemId } = req.params;
+  const inst = db.prepare('SELECT status FROM instruments WHERE id = ?').get(id) as any;
+  if (!inst) return res.status(404).json({ success: false, error: 'Instrument not found' });
+  if (inst.status === 'Approved') {
+    return res.status(403).json({ success: false, error: 'Cannot update items in an approved instrument. Approved instruments are locked.' });
+  }
+
+  const { itemCode, itemNumber, questionText, itemType, variableId, dimensionId, indicatorId, responseScaleId, required, reverseCoded, status, source, notes } = req.body;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE instrument_items SET
+      item_code = COALESCE(?, item_code),
+      item_number = COALESCE(?, item_number),
+      question_text = COALESCE(?, question_text),
+      item_type = COALESCE(?, item_type),
+      variable_id = COALESCE(?, variable_id),
+      dimension_id = COALESCE(?, dimension_id),
+      indicator_id = COALESCE(?, indicator_id),
+      response_scale_id = COALESCE(?, response_scale_id),
+      required = COALESCE(?, required),
+      reverse_coded = COALESCE(?, reverse_coded),
+      status = COALESCE(?, status),
+      source = COALESCE(?, source),
+      notes = COALESCE(?, notes),
+      updated_at = ?
+    WHERE id = ? AND instrument_id = ?
+  `).run(
+    itemCode, itemNumber, questionText, itemType, variableId, dimensionId, indicatorId, responseScaleId,
+    required !== undefined ? (required ? 1 : 0) : null,
+    reverseCoded !== undefined ? (reverseCoded ? 1 : 0) : null,
+    status, source, notes, now, itemId, id
+  );
+
+  res.json({ success: true, message: 'Item updated' });
+});
+
 apiRouter.delete('/projects/:projectId/instruments/:id/items/:itemId', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
-  const { itemId } = req.params;
-  db.prepare('DELETE FROM instrument_items WHERE id = ?').run(itemId);
+  const { id, itemId } = req.params;
+  const inst = db.prepare('SELECT status FROM instruments WHERE id = ?').get(id) as any;
+  if (!inst) return res.status(404).json({ success: false, error: 'Instrument not found' });
+  if (inst.status === 'Approved') {
+    return res.status(403).json({ success: false, error: 'Cannot delete items from an approved instrument. Approved instruments are locked.' });
+  }
+
+  db.prepare('DELETE FROM instrument_items WHERE id = ? AND instrument_id = ?').run(itemId, id);
   res.json({ success: true, message: 'Item deleted' });
 });
 
 // Approve instrument -> creates immutable InstrumentVersion snapshot
 apiRouter.post('/projects/:projectId/instruments/:id/approve', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { projectId, id } = req.params;
+  const { notes, validationSummary } = req.body;
+
   const inst = db.prepare('SELECT * FROM instruments WHERE id = ?').get(id) as any;
   if (!inst) {
     return res.status(404).json({ success: false, error: 'Instrument not found' });
@@ -867,19 +1046,121 @@ apiRouter.post('/projects/:projectId/instruments/:id/approve', authenticate, req
     return res.status(400).json({ success: false, error: 'Cannot approve instrument with zero items' });
   }
 
+  const scales = db.prepare('SELECT * FROM response_scales WHERE project_id = ? AND is_archived = 0').all(projectId) as any[];
+
+  // Determine version number
+  const existingVers = db.prepare('SELECT MAX(version_number) as maxVer FROM instrument_versions WHERE instrument_id = ?').get(id) as any;
+  const nextVersionNumber = (existingVers?.maxVer || 0) + 1;
+  const versionString = `${nextVersionNumber}.0`;
+
   const versionId = `iv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
+  const auditId = `aud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-  // Create immutable version snapshot
-  db.prepare(`
-    INSERT INTO instrument_versions (id, instrument_id, project_id, version_number, status, snapshot_json, created_at)
-    VALUES (?, ?, ?, ?, 'Approved', ?, ?)
-  `).run(versionId, id, projectId, inst.version || '1.0', JSON.stringify({ instrument: inst, items }), now);
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    db.prepare(`
+      INSERT INTO instrument_versions (
+        id, instrument_id, project_id, version_number, status, snapshot_json,
+        items_snapshot_json, scales_snapshot_json, validation_summary_json,
+        change_summary, approved_by, approved_at, notes, created_at
+      ) VALUES (?, ?, ?, ?, 'Approved', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      versionId,
+      id,
+      projectId,
+      nextVersionNumber,
+      JSON.stringify({ items, scales }),
+      JSON.stringify(items),
+      JSON.stringify(scales),
+      validationSummary ? JSON.stringify(validationSummary) : JSON.stringify({ passed: true, itemCount: items.length }),
+      `Version ${versionString} psychometric approval`,
+      req.user!.name,
+      now,
+      notes || 'Instrument validated and psychometrically approved',
+      now
+    );
 
-  // Update instrument status to Approved
-  db.prepare("UPDATE instruments SET status = 'Approved', updated_at = ? WHERE id = ?").run(now, id);
+    db.prepare(`
+      UPDATE instruments
+      SET status = 'Approved', version = ?, updated_at = ?
+      WHERE id = ?
+    `).run(versionString, now, id);
 
-  res.json({ success: true, versionId, message: 'Instrument psychometrically approved and locked into version snapshot.' });
+    db.prepare(`
+      INSERT INTO audit_logs (id, user_id, user_name, project_id, action, entity_type, entity_id, entity_name, timestamp, metadata_json)
+      VALUES (?, ?, ?, ?, 'INSTRUMENT_APPROVED', 'instrument', ?, ?, ?, ?)
+    `).run(
+      auditId,
+      req.user!.id,
+      req.user!.name,
+      projectId,
+      id,
+      inst.name,
+      now,
+      JSON.stringify({ versionId, versionNumber: nextVersionNumber, itemCount: items.length })
+    );
+
+    db.exec('COMMIT;');
+  } catch (txErr) {
+    db.exec('ROLLBACK;');
+    console.error('Approve instrument transaction failed:', txErr);
+    return res.status(500).json({ success: false, error: 'Failed to approve instrument atomically.' });
+  }
+
+  res.json({
+    success: true,
+    versionId,
+    versionNumber: nextVersionNumber,
+    version: versionString,
+    message: 'Instrument psychometrically approved and locked into immutable version snapshot.'
+  });
+});
+
+// Branch new draft revision from approved instrument
+apiRouter.post('/projects/:projectId/instruments/:id/branch', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const inst = db.prepare('SELECT * FROM instruments WHERE id = ?').get(id) as any;
+  if (!inst) return res.status(404).json({ success: false, error: 'Instrument not found' });
+
+  const currentVer = parseFloat(inst.version || '1.0');
+  const nextVer = `${(currentVer + 0.1).toFixed(1)}`;
+  const now = new Date().toISOString();
+
+  db.prepare("UPDATE instruments SET status = 'Draft', version = ?, updated_at = ? WHERE id = ?").run(nextVer, now, id);
+  res.json({ success: true, status: 'Draft', version: nextVer, message: `Branched new draft revision v${nextVer}` });
+});
+
+// Get instrument versions
+apiRouter.get('/projects/:projectId/instruments/:id/versions', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const rows = db.prepare(`
+    SELECT id, instrument_id as instrumentId, project_id as projectId, version_number as versionNumber,
+           status, items_snapshot_json as itemsSnapshotJson, scales_snapshot_json as scalesSnapshotJson,
+           validation_summary_json as validationSummaryJson, change_summary as changeSummary,
+           approved_by as approvedBy, approved_at as approvedAt, notes, created_at as createdAt
+    FROM instrument_versions WHERE instrument_id = ? ORDER BY version_number DESC
+  `).all(id) as any[];
+
+  const versions = rows.map(r => ({
+    ...r,
+    items: JSON.parse(r.itemsSnapshotJson || '[]'),
+    scales: JSON.parse(r.scalesSnapshotJson || '[]'),
+    validationSummary: r.validationSummaryJson ? JSON.parse(r.validationSummaryJson) : null,
+  }));
+
+  res.json({ success: true, data: versions });
+});
+
+// Enforce strict immutability on instrument versions
+apiRouter.all('/projects/:projectId/instruments/:id/versions/:versionId', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  if (['PUT', 'PATCH', 'DELETE', 'POST'].includes(req.method)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Instrument versions are immutable historical snapshots and cannot be modified or deleted.',
+    });
+  }
+  res.status(405).json({ success: false, error: 'Method Not Allowed' });
 });
 
 // ==========================================
@@ -893,16 +1174,51 @@ apiRouter.get('/projects/:projectId/questionnaires', authenticate, requireProjec
            instructions, status, current_version as currentVersion, slug,
            response_mode as responseMode, anonymity_mode as anonymityMode,
            allow_multiple_submissions as allowMultipleSubmissions, close_date as closeDate,
+           owner_id as ownerId, introduction, consent_statement as consentStatement,
+           closing_message as closingMessage, start_date as startDate, end_date as endDate,
+           max_responses as maxResponses, is_archived as isArchived,
            created_at as createdAt, updated_at as updatedAt
     FROM questionnaires WHERE project_id = ? ORDER BY created_at DESC
   `).all(projectId) as any[];
 
-  res.json({ success: true, data: questionnaires });
+  res.json({
+    success: true,
+    data: questionnaires.map(q => ({
+      ...q,
+      allowMultipleSubmissions: Boolean(q.allowMultipleSubmissions),
+      isArchived: Boolean(q.isArchived),
+    })),
+  });
+});
+
+apiRouter.get('/projects/:projectId/questionnaires/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const q = db.prepare(`
+    SELECT id, project_id as projectId, instrument_id as instrumentId, title, description,
+           instructions, status, current_version as currentVersion, slug,
+           response_mode as responseMode, anonymity_mode as anonymityMode,
+           allow_multiple_submissions as allowMultipleSubmissions, close_date as closeDate,
+           owner_id as ownerId, introduction, consent_statement as consentStatement,
+           closing_message as closingMessage, start_date as startDate, end_date as endDate,
+           max_responses as maxResponses, is_archived as isArchived,
+           created_at as createdAt, updated_at as updatedAt
+    FROM questionnaires WHERE id = ?
+  `).get(id) as any;
+
+  if (!q) return res.status(404).json({ success: false, error: 'Questionnaire not found' });
+  res.json({
+    success: true,
+    data: {
+      ...q,
+      allowMultipleSubmissions: Boolean(q.allowMultipleSubmissions),
+      isArchived: Boolean(q.isArchived),
+    }
+  });
 });
 
 apiRouter.post('/projects/:projectId/questionnaires', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { projectId } = req.params;
-  const { instrumentId, title, description, instructions, responseMode, anonymityMode, slug } = req.body;
+  const { instrumentId, title, description, instructions, responseMode, anonymityMode, slug, introduction, consentStatement, closingMessage, closeDate } = req.body;
 
   if (!title) {
     return res.status(400).json({ success: false, error: 'Title is required' });
@@ -915,9 +1231,16 @@ apiRouter.post('/projects/:projectId/questionnaires', authenticate, requireProje
   db.prepare(`
     INSERT INTO questionnaires (
       id, project_id, instrument_id, title, description, instructions, status,
-      current_version, slug, response_mode, anonymity_mode, allow_multiple_submissions, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 'Draft', 1, ?, ?, ?, 0, ?, ?)
-  `).run(id, projectId, instrumentId || null, title.trim(), description || null, instructions || null, actualSlug, responseMode || 'anonymous', anonymityMode || 'strict_anonymous', now, now);
+      current_version, slug, response_mode, anonymity_mode, allow_multiple_submissions,
+      owner_id, introduction, consent_statement, closing_message, close_date,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'Draft', 1, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, projectId, instrumentId || null, title.trim(), description || null, instructions || null,
+    actualSlug, responseMode || 'anonymous', anonymityMode || 'strict_anonymous',
+    req.user!.id, introduction || null, consentStatement || null, closingMessage || null, closeDate || null,
+    now, now
+  );
 
   res.status(201).json({
     success: true,
@@ -934,40 +1257,93 @@ apiRouter.post('/projects/:projectId/questionnaires', authenticate, requireProje
       responseMode: responseMode || 'anonymous',
       anonymityMode: anonymityMode || 'strict_anonymous',
       allowMultipleSubmissions: false,
+      introduction,
+      consentStatement,
+      closingMessage,
+      closeDate,
       createdAt: now,
       updatedAt: now,
     },
   });
 });
 
-// Publish Questionnaire (creates immutable QuestionnaireVersion snapshot with items & scales)
+apiRouter.put('/projects/:projectId/questionnaires/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const {
+    instrumentId, title, description, instructions, responseMode, anonymityMode,
+    slug, allowMultipleSubmissions, closeDate, introduction, consentStatement,
+    closingMessage, startDate, endDate, maxResponses
+  } = req.body;
+
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE questionnaires SET
+      instrument_id = COALESCE(?, instrument_id),
+      title = COALESCE(?, title),
+      description = COALESCE(?, description),
+      instructions = COALESCE(?, instructions),
+      response_mode = COALESCE(?, response_mode),
+      anonymity_mode = COALESCE(?, anonymity_mode),
+      slug = COALESCE(?, slug),
+      allow_multiple_submissions = COALESCE(?, allow_multiple_submissions),
+      close_date = COALESCE(?, close_date),
+      introduction = COALESCE(?, introduction),
+      consent_statement = COALESCE(?, consent_statement),
+      closing_message = COALESCE(?, closing_message),
+      start_date = COALESCE(?, start_date),
+      end_date = COALESCE(?, end_date),
+      max_responses = COALESCE(?, max_responses),
+      updated_at = ?
+    WHERE id = ?
+  `).run(
+    instrumentId, title, description, instructions, responseMode, anonymityMode,
+    slug ? slug.toLowerCase().replace(/[^a-z0-9_-]/g, '-') : null,
+    allowMultipleSubmissions !== undefined ? (allowMultipleSubmissions ? 1 : 0) : null,
+    closeDate, introduction, consentStatement, closingMessage, startDate, endDate, maxResponses,
+    now, id
+  );
+
+  res.json({ success: true, message: 'Questionnaire updated' });
+});
+
+apiRouter.delete('/projects/:projectId/questionnaires/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const subCount = db.prepare('SELECT COUNT(*) as c FROM survey_submissions WHERE questionnaire_id = ?').get(id) as { c: number };
+  if (subCount.c > 0) {
+    return res.status(400).json({
+      success: false,
+      error: `Cannot delete questionnaire with ${subCount.c} participant submissions. Close or archive the questionnaire instead.`,
+    });
+  }
+  db.prepare('DELETE FROM questionnaires WHERE id = ?').run(id);
+  res.json({ success: true, message: 'Questionnaire deleted' });
+});
+
+// Publish Questionnaire (creates immutable QuestionnaireVersion snapshot with items & scales strictly from DB)
 apiRouter.post('/projects/:projectId/questionnaires/:id/publish', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { projectId, id } = req.params;
-  const { title, instructions, changeSummary, itemsSnapshot, scalesSnapshot } = req.body;
+  const { title, instructions, changeSummary } = req.body;
 
   const q = db.prepare('SELECT * FROM questionnaires WHERE id = ?').get(id) as any;
   if (!q) {
     return res.status(404).json({ success: false, error: 'Questionnaire not found' });
   }
 
-  let finalItems = itemsSnapshot;
-  let finalScales = scalesSnapshot;
-
-  // If client did not provide items/scales, take from linked instrument or project
-  if (!finalItems || !Array.isArray(finalItems) || finalItems.length === 0) {
-    if (q.instrument_id) {
-      finalItems = db.prepare('SELECT * FROM instrument_items WHERE instrument_id = ? ORDER BY item_number ASC').all(q.instrument_id);
-    }
+  // Authoritative server logic: itemsSnapshot & scalesSnapshot from request body MUST be ignored!
+  if (!q.instrument_id) {
+    return res.status(400).json({ success: false, error: 'Cannot publish questionnaire: No measurement instrument is linked to this questionnaire.' });
   }
 
-  if (!finalScales || !Array.isArray(finalScales) || finalScales.length === 0) {
-    const scales = db.prepare('SELECT * FROM response_scales WHERE project_id = ?').all(projectId) as any[];
-    finalScales = scales.map(s => ({ ...s, options: JSON.parse(s.options_json) }));
-  }
-
+  const finalItems = db.prepare('SELECT * FROM instrument_items WHERE instrument_id = ? ORDER BY item_number ASC').all(q.instrument_id) as any[];
   if (!finalItems || finalItems.length === 0) {
-    return res.status(400).json({ success: false, error: 'Cannot publish questionnaire without measurement items' });
+    return res.status(400).json({ success: false, error: 'Cannot publish questionnaire: Linked instrument has zero measurement items.' });
   }
+
+  const latestInstVer = db.prepare('SELECT id FROM instrument_versions WHERE instrument_id = ? ORDER BY version_number DESC LIMIT 1').get(q.instrument_id) as any;
+  const instrumentVersionId = latestInstVer ? latestInstVer.id : null;
+
+  const scales = db.prepare('SELECT * FROM response_scales WHERE project_id = ? AND is_archived = 0').all(projectId) as any[];
+  const finalScales = scales.map(s => ({ ...s, options: JSON.parse(s.options_json) }));
 
   const newVersionNumber = (q.current_version || 1) + (q.status === 'Active' ? 1 : 0);
   const versionId = `qv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -980,8 +1356,9 @@ apiRouter.post('/projects/:projectId/questionnaires/:id/publish', authenticate, 
     db.prepare(`
       INSERT INTO questionnaire_versions (
         id, questionnaire_id, project_id, version_number, status, title, instructions,
+        instrument_id, instrument_version_id, is_locked,
         items_snapshot_json, scales_snapshot_json, change_summary, published_at, created_at
-      ) VALUES (?, ?, ?, ?, 'Published', ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, 'Published', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
     `).run(
       versionId,
       id,
@@ -989,6 +1366,8 @@ apiRouter.post('/projects/:projectId/questionnaires/:id/publish', authenticate, 
       newVersionNumber,
       title || q.title,
       instructions || q.instructions,
+      q.instrument_id,
+      instrumentVersionId,
       JSON.stringify(finalItems),
       JSON.stringify(finalScales),
       changeSummary || `Published version ${newVersionNumber}`,
@@ -1013,7 +1392,7 @@ apiRouter.post('/projects/:projectId/questionnaires/:id/publish', authenticate, 
       versionId,
       `Questionnaire Version ${newVersionNumber}`,
       now,
-      JSON.stringify({ questionnaireId: id, versionNumber: newVersionNumber, itemCount: finalItems.length })
+      JSON.stringify({ questionnaireId: id, versionNumber: newVersionNumber, itemCount: finalItems.length, instrumentId: q.instrument_id, instrumentVersionId })
     );
 
     db.exec('COMMIT;');
@@ -1042,22 +1421,42 @@ apiRouter.all('/projects/:projectId/questionnaires/:id/versions/:versionId', aut
   res.status(405).json({ success: false, error: 'Method Not Allowed' });
 });
 
-// Pause / Resume / Close questionnaire
+// Pause questionnaire (Active -> Paused)
 apiRouter.post('/projects/:projectId/questionnaires/:id/pause', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  db.prepare("UPDATE questionnaires SET status = 'Paused', updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+  const q = db.prepare('SELECT status FROM questionnaires WHERE id = ?').get(id) as any;
+  if (!q) return res.status(404).json({ success: false, error: 'Questionnaire not found' });
+  if (q.status !== 'Active') {
+    return res.status(400).json({ success: false, error: `Invalid state transition: only Active surveys can be paused. Current status is ${q.status}.` });
+  }
+  const now = new Date().toISOString();
+  db.prepare("UPDATE questionnaires SET status = 'Paused', updated_at = ? WHERE id = ?").run(now, id);
   res.json({ success: true, status: 'Paused' });
 });
 
+// Resume questionnaire (Paused -> Active)
 apiRouter.post('/projects/:projectId/questionnaires/:id/resume', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  db.prepare("UPDATE questionnaires SET status = 'Active', updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+  const q = db.prepare('SELECT status FROM questionnaires WHERE id = ?').get(id) as any;
+  if (!q) return res.status(404).json({ success: false, error: 'Questionnaire not found' });
+  if (q.status !== 'Paused') {
+    return res.status(400).json({ success: false, error: `Invalid state transition: only Paused surveys can be resumed. Current status is ${q.status}.` });
+  }
+  const now = new Date().toISOString();
+  db.prepare("UPDATE questionnaires SET status = 'Active', updated_at = ? WHERE id = ?").run(now, id);
   res.json({ success: true, status: 'Active' });
 });
 
+// Close questionnaire (Active or Paused -> Closed)
 apiRouter.post('/projects/:projectId/questionnaires/:id/close', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  db.prepare("UPDATE questionnaires SET status = 'Closed', updated_at = ? WHERE id = ?").run(new Date().toISOString(), id);
+  const q = db.prepare('SELECT status FROM questionnaires WHERE id = ?').get(id) as any;
+  if (!q) return res.status(404).json({ success: false, error: 'Questionnaire not found' });
+  if (!['Active', 'Paused'].includes(q.status)) {
+    return res.status(400).json({ success: false, error: `Invalid state transition: only Active or Paused surveys can be closed. Current status is ${q.status}.` });
+  }
+  const now = new Date().toISOString();
+  db.prepare("UPDATE questionnaires SET status = 'Closed', updated_at = ? WHERE id = ?").run(now, id);
   res.json({ success: true, status: 'Closed' });
 });
 
@@ -1593,15 +1992,204 @@ apiRouter.get('/projects/:projectId/audit-logs', authenticate, requireProjectAcc
   });
 });
 
-// Enforce strict tamper-evident append-only policy on audit logs
+// Record audit log (append-only)
+apiRouter.post('/projects/:projectId/audit-logs', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { projectId } = req.params;
+  const { action, entityType, entityId, entityName, metadata } = req.body;
+
+  if (!action || !entityType || !entityId) {
+    return res.status(400).json({ success: false, error: 'action, entityType, and entityId are required' });
+  }
+
+  const id = `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    INSERT INTO audit_logs (id, user_id, user_name, project_id, action, entity_type, entity_id, entity_name, timestamp, metadata_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    req.user!.id,
+    req.user!.name,
+    projectId,
+    action,
+    entityType,
+    entityId,
+    entityName || null,
+    now,
+    metadata ? JSON.stringify(metadata) : null
+  );
+
+  res.status(201).json({
+    success: true,
+    data: {
+      id,
+      userId: req.user!.id,
+      userName: req.user!.name,
+      projectId,
+      action,
+      entityType,
+      entityId,
+      entityName,
+      timestamp: now,
+      metadata,
+    },
+  });
+});
+
+// Enforce strict tamper-evident append-only policy on audit logs (prohibit updates and deletes)
 apiRouter.all(['/projects/:projectId/audit-logs', '/projects/:projectId/audit-logs/:id'], authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response, next) => {
-  if (['DELETE', 'PUT', 'PATCH', 'POST'].includes(req.method)) {
+  if (['DELETE', 'PUT', 'PATCH'].includes(req.method)) {
     return res.status(403).json({
       success: false,
       error: 'Audit logs are tamper-evident, append-only scientific records. Direct modification or deletion is strictly prohibited.',
     });
   }
   next();
+});
+
+// ==========================================
+// 11B. AI GENERATIONS & CANDIDATES
+// ==========================================
+
+apiRouter.get('/projects/:projectId/ai/generations', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { projectId } = req.params;
+  const rows = db.prepare(`
+    SELECT id, project_id as projectId, instrument_id as instrumentId,
+           variable_id as variableId, dimension_id as dimensionId, indicator_id as indicatorId,
+           prompt_text as promptText, response_json as responseJson, status,
+           requested_by as requestedBy, created_at as createdAt
+    FROM ai_generations WHERE project_id = ? ORDER BY created_at DESC
+  `).all(projectId) as any[];
+
+  res.json({
+    success: true,
+    data: rows.map(r => ({
+      ...r,
+      response: r.responseJson ? JSON.parse(r.responseJson) : null,
+    })),
+  });
+});
+
+apiRouter.post('/projects/:projectId/ai/generations', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { projectId } = req.params;
+  const { id, instrumentId, variableId, dimensionId, indicatorId, promptText, responseJson, status, candidates } = req.body;
+
+  const genId = id || `gen_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const now = new Date().toISOString();
+
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    db.prepare(`
+      INSERT INTO ai_generations (
+        id, project_id, instrument_id, variable_id, dimension_id, indicator_id,
+        prompt_text, response_json, status, requested_by, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      genId,
+      projectId,
+      instrumentId,
+      variableId || null,
+      dimensionId || null,
+      indicatorId || null,
+      promptText || '',
+      typeof responseJson === 'string' ? responseJson : JSON.stringify(responseJson || {}),
+      status || 'Completed',
+      req.user!.id,
+      now
+    );
+
+    if (Array.isArray(candidates)) {
+      for (const c of candidates) {
+        const cId = c.id || `cand_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        db.prepare(`
+          INSERT INTO ai_candidates (
+            id, generation_id, project_id, candidate_code, question_text, rationale,
+            suggested_scale_type, reverse_coded, quality_score, potential_issues_json,
+            status, final_text, modified_by_researcher, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          cId,
+          genId,
+          projectId,
+          c.candidateCode || c.candidateId || null,
+          c.questionText || c.itemText || '',
+          c.rationale || null,
+          c.suggestedScaleType || null,
+          c.reverseCoded ? 1 : 0,
+          c.qualityScore || null,
+          c.potentialIssues ? JSON.stringify(c.potentialIssues) : null,
+          c.status || 'Pending',
+          c.finalText || c.questionText || null,
+          c.modifiedByResearcher ? 1 : 0,
+          now
+        );
+      }
+    }
+
+    db.exec('COMMIT;');
+  } catch (err) {
+    db.exec('ROLLBACK;');
+    console.error('Failed to save AI generation:', err);
+    return res.status(500).json({ success: false, error: 'Failed to record AI generation.' });
+  }
+
+  res.status(201).json({ success: true, generationId: genId });
+});
+
+apiRouter.get('/projects/:projectId/ai/candidates', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { projectId } = req.params;
+  const rows = db.prepare(`
+    SELECT id, generation_id as generationId, project_id as projectId,
+           candidate_code as candidateCode, question_text as questionText,
+           rationale, suggested_scale_type as suggestedScaleType, reverse_coded as reverseCoded,
+           quality_score as qualityScore, potential_issues_json as potentialIssuesJson,
+           status, final_text as finalText, modified_by_researcher as modifiedByResearcher,
+           accepted_item_id as acceptedItemId, review_notes as reviewNotes,
+           reviewed_by as reviewedBy, reviewed_at as reviewedAt, created_at as createdAt
+    FROM ai_candidates WHERE project_id = ? ORDER BY created_at DESC
+  `).all(projectId) as any[];
+
+  res.json({
+    success: true,
+    data: rows.map(r => ({
+      ...r,
+      reverseCoded: Boolean(r.reverseCoded),
+      modifiedByResearcher: Boolean(r.modifiedByResearcher),
+      potentialIssues: r.potentialIssuesJson ? JSON.parse(r.potentialIssuesJson) : [],
+    })),
+  });
+});
+
+apiRouter.put('/projects/:projectId/ai/candidates/:id', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { status, finalText, questionText, reverseCoded, reviewNotes, modifiedByResearcher } = req.body;
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE ai_candidates SET
+      status = COALESCE(?, status),
+      final_text = COALESCE(?, final_text),
+      question_text = COALESCE(?, question_text),
+      reverse_coded = COALESCE(?, reverse_coded),
+      review_notes = COALESCE(?, review_notes),
+      modified_by_researcher = COALESCE(?, modified_by_researcher),
+      reviewed_by = ?,
+      reviewed_at = ?
+    WHERE id = ?
+  `).run(
+    status || null,
+    finalText || null,
+    questionText || null,
+    reverseCoded !== undefined ? (reverseCoded ? 1 : 0) : null,
+    reviewNotes || null,
+    modifiedByResearcher !== undefined ? (modifiedByResearcher ? 1 : 0) : null,
+    req.user!.id,
+    now,
+    id
+  );
+
+  res.json({ success: true, message: 'Candidate item updated.' });
 });
 
 // ==========================================

@@ -43,16 +43,16 @@ export const InstrumentList: React.FC<InstrumentListProps> = ({
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isScaleLibraryOpen, setIsScaleLibraryOpen] = useState(false);
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!currentUser) return;
     setLoading(true);
 
-    const instRes = instrumentService.getInstruments(projectId, currentUser.id);
+    const instRes = await instrumentService.getInstruments(projectId, currentUser.id);
     if (instRes.success && instRes.data) {
       setInstruments(instRes.data);
     }
 
-    const varRes = variableService.getVariables(projectId, currentUser.id);
+    const varRes = await variableService.getVariables(projectId, currentUser.id);
     if (varRes.success && varRes.data) {
       setVariables(varRes.data);
     }
@@ -71,9 +71,9 @@ export const InstrumentList: React.FC<InstrumentListProps> = ({
   const totalItems = instruments.reduce((sum, inst) => sum + (inst.items?.length || 0), 0);
   const approvedCount = instruments.filter(i => i.status === 'Approved').length;
 
-  const handleCreateSubmit = (data: any) => {
+  const handleCreateSubmit = async (data: any) => {
     if (!currentUser) return;
-    const res = instrumentService.createInstrument(
+    const res = await instrumentService.createInstrument(
       projectId,
       currentUser.id,
       currentUser.name,
@@ -89,10 +89,10 @@ export const InstrumentList: React.FC<InstrumentListProps> = ({
     }
   };
 
-  const handleDeleteInstrument = (e: React.MouseEvent, instrumentId: string, name: string) => {
+  const handleDeleteInstrument = async (e: React.MouseEvent, instrumentId: string, name: string) => {
     e.stopPropagation();
     if (!currentUser) return;
-    const res = instrumentService.deleteInstrument(instrumentId, projectId, currentUser.id, currentUser.name);
+    const res = await instrumentService.deleteInstrument(instrumentId, projectId, currentUser.id, currentUser.name);
     if (res.success) {
       success('Instrument Deleted', `Instrument "${name}" removed.`);
       loadData();
@@ -101,10 +101,10 @@ export const InstrumentList: React.FC<InstrumentListProps> = ({
     }
   };
 
-  const handleArchiveInstrument = (e: React.MouseEvent, instrumentId: string) => {
+  const handleArchiveInstrument = async (e: React.MouseEvent, instrumentId: string) => {
     e.stopPropagation();
     if (!currentUser) return;
-    const res = instrumentService.archiveInstrument(instrumentId, projectId, currentUser.id, currentUser.name);
+    const res = await instrumentService.archiveInstrument(instrumentId, projectId, currentUser.id, currentUser.name);
     if (res.success) {
       success('Archived', 'Instrument archived.');
       loadData();

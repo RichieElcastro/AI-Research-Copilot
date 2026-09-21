@@ -29,7 +29,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
   const [editingProject, setEditingProject] = useState<ResearchProject | null>(null);
   const [deletingProject, setDeletingProject] = useState<ResearchProject | null>(null);
 
-  const loadProjects = () => {
+  const loadProjects = async () => {
     if (!currentUser) {
       setProjects([]);
       setLoading(false);
@@ -43,10 +43,10 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
 
       // Load variable counts for each project
       const counts: Record<string, number> = {};
-      res.data.forEach(p => {
-        const vRes = variableService.getVariables(p.id, currentUser.id);
+      for (const p of res.data) {
+        const vRes = await variableService.getVariables(p.id, currentUser.id);
         counts[p.id] = vRes.success && vRes.data ? vRes.data.length : 0;
-      });
+      }
       setVariableCounts(counts);
     } else {
       error('Failed to load projects', res.error);
@@ -58,11 +58,11 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
     loadProjects();
   }, [currentUser?.id]);
 
-  const handleCreateOrUpdate = (data: any) => {
+  const handleCreateOrUpdate = async (data: any) => {
     if (!currentUser) return;
 
     if (editingProject) {
-      const res = projectService.updateProject(editingProject.id, currentUser.id, currentUser.name, data);
+      const res = await projectService.updateProject(editingProject.id, currentUser.id, currentUser.name, data);
       if (res.success && res.data) {
         success('Project Updated', `Modifications saved for "${res.data.title}".`);
         loadProjects();
@@ -70,7 +70,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
         error('Update Failed', res.error);
       }
     } else {
-      const res = projectService.createProject(currentUser.id, currentUser.name, data);
+      const res = await projectService.createProject(currentUser.id, currentUser.name, data);
       if (res.success && res.data) {
         success('Research Project Created', `Workspace initialized for "${res.data.title}".`);
         loadProjects();
@@ -80,9 +80,9 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
     }
   };
 
-  const handleArchive = (project: ResearchProject) => {
+  const handleArchive = async (project: ResearchProject) => {
     if (!currentUser) return;
-    const res = projectService.toggleArchive(project.id, currentUser.id, currentUser.name);
+    const res = await projectService.toggleArchive(project.id, currentUser.id, currentUser.name);
     if (res.success && res.data) {
       info(
         res.data.status === 'Archived' ? 'Project Archived' : 'Project Unarchived',
@@ -94,10 +94,10 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!currentUser || !deletingProject) return;
 
-    const res = projectService.deleteProject(deletingProject.id, currentUser.id, currentUser.name);
+    const res = await projectService.deleteProject(deletingProject.id, currentUser.id, currentUser.name);
     if (res.success) {
       success('Project Deleted', `Removed "${deletingProject.title}" and its associated variable definitions.`);
       setDeletingProject(null);
@@ -107,9 +107,9 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
     }
   };
 
-  const handleLoadDemoProject = () => {
+  const handleLoadDemoProject = async () => {
     if (!currentUser) return;
-    const res = projectService.loadDemoProjectForUser(currentUser.id, currentUser.name);
+    const res = await projectService.loadDemoProjectForUser(currentUser.id, currentUser.name);
     if (res.success && res.data) {
       success('Demo Research Loaded', 'Seeded the "Doomscrolling & Academic Burnout" project with complete variables and dimensions.');
       loadProjects();

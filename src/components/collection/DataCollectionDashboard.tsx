@@ -81,12 +81,12 @@ export const DataCollectionDashboard: React.FC<DataCollectionDashboardProps> = (
     // Ensure session token is active
     await apiClient.ensureSession(currentUser.id);
 
-    const qRes = questionnaireService.getByProject(projectId, currentUser.id);
+    const qRes = await questionnaireService.getByProject(projectId, currentUser.id);
     if (qRes.success && qRes.data) {
       setQuestionnaires(qRes.data);
 
       const targetQId =
-        selectedQuestionnaireId && qRes.data.some(q => q.id === selectedQuestionnaireId)
+        selectedQuestionnaireId && qRes.data.some((q: any) => q.id === selectedQuestionnaireId)
           ? selectedQuestionnaireId
           : qRes.data[0]?.id || null;
 
@@ -94,7 +94,7 @@ export const DataCollectionDashboard: React.FC<DataCollectionDashboardProps> = (
 
       if (targetQId) {
         // Load versions
-        const vRes = questionnaireService.getVersions(targetQId, projectId, currentUser.id);
+        const vRes = await questionnaireService.getVersions(targetQId, projectId, currentUser.id);
         if (vRes.success && vRes.data) {
           setVersions(vRes.data);
         }
@@ -166,10 +166,10 @@ export const DataCollectionDashboard: React.FC<DataCollectionDashboardProps> = (
   const itemsSnapshot: QuestionnaireItemSnapshot[] = latestVersion?.itemsSnapshot || [];
 
   // Lifecycle action triggers
-  const handleTogglePause = () => {
+  const handleTogglePause = async () => {
     if (!currentUser || !activeQuestionnaire) return;
     if (activeQuestionnaire.status === 'Published') {
-      const res = questionnaireService.pause(
+      const res = await questionnaireService.pause(
         activeQuestionnaire.id,
         projectId,
         currentUser.id,
@@ -183,7 +183,7 @@ export const DataCollectionDashboard: React.FC<DataCollectionDashboardProps> = (
         error('Pause Failed', res.error);
       }
     } else if (activeQuestionnaire.status === 'Paused') {
-      const res = questionnaireService.resume(
+      const res = await questionnaireService.resume(
         activeQuestionnaire.id,
         projectId,
         currentUser.id,

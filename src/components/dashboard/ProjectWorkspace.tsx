@@ -54,7 +54,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
-  const loadProjectData = () => {
+  const loadProjectData = async () => {
     if (!currentUser) return;
     setLoading(true);
 
@@ -62,7 +62,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     if (pRes.success && pRes.data) {
       setProject(pRes.data);
 
-      const vRes = variableService.getVariables(projectId, currentUser.id);
+      const vRes = await variableService.getVariables(projectId, currentUser.id);
       setVariableCount(vRes.success && vRes.data ? vRes.data.length : 0);
     } else {
       error('Access Error', pRes.error || 'Failed to open project.');
@@ -75,9 +75,9 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     loadProjectData();
   }, [projectId, currentUser?.id]);
 
-  const handleUpdateProject = (data: any) => {
+  const handleUpdateProject = async (data: any) => {
     if (!currentUser || !project) return;
-    const res = projectService.updateProject(project.id, currentUser.id, currentUser.name, data);
+    const res = await projectService.updateProject(project.id, currentUser.id, currentUser.name, data);
     if (res.success && res.data) {
       setProject(res.data);
       success('Project Updated', `Setup information for "${res.data.title}" saved.`);
@@ -87,11 +87,11 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
     }
   };
 
-  const handleExportBlueprint = () => {
+  const handleExportBlueprint = async () => {
     if (!project || !currentUser) return;
-    const vRes = variableService.getVariables(project.id, currentUser.id);
-    const iRes = instrumentService.getInstruments(project.id, currentUser.id);
-    const sRes = scaleService.getScales(project.id, currentUser.id);
+    const vRes = await variableService.getVariables(project.id, currentUser.id);
+    const iRes = await instrumentService.getInstruments(project.id, currentUser.id);
+    const sRes = await scaleService.getScales(project.id, currentUser.id);
 
     const blueprint = {
       manifestVersion: '2.0.0',

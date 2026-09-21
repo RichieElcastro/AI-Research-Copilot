@@ -527,3 +527,53 @@ if (projectCount.c === 0) {
     now
   );
 }
+
+// Ensure demo instrument has an approved version and questionnaire links to it with full lineage
+const demoInstVer = db.prepare('SELECT id FROM instrument_versions WHERE id = ?').get('inst_ver_demo_doomscrolling_v1');
+if (!demoInstVer) {
+  const now = '2026-02-10T10:00:00.000Z';
+  const demoProjectId = 'proj_demo_doomscrolling_2026';
+  const demoInstId = 'inst_demo_doomscrolling';
+
+  const demoItems = db.prepare('SELECT * FROM instrument_items WHERE instrument_id = ?').all(demoInstId);
+  const demoScales = db.prepare('SELECT * FROM response_scales WHERE project_id = ?').all(demoProjectId);
+
+  db.prepare(`
+    INSERT OR REPLACE INTO instrument_versions (
+      id, instrument_id, project_id, version_number, status, snapshot_json, items_snapshot_json, scales_snapshot_json,
+      validation_summary_json, change_summary, approved_by, approved_at, notes, created_at
+    ) VALUES (?, ?, ?, 1, 'Approved', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'inst_ver_demo_doomscrolling_v1',
+    demoInstId,
+    demoProjectId,
+    JSON.stringify({ items: demoItems, scales: demoScales }),
+    JSON.stringify(demoItems),
+    JSON.stringify(demoScales),
+    JSON.stringify({ isValid: true, readinessScore: 92, passedChecks: 5 }),
+    'Initial empirical baseline approval',
+    'Dr. Amelia Ross',
+    now,
+    'Psychometrically validated demo baseline',
+    now
+  );
+
+  db.prepare(`
+    UPDATE instruments SET status = 'Approved', version = '1.0' WHERE id = ?
+  `).run(demoInstId);
+
+  db.prepare(`
+    UPDATE questionnaires
+    SET owner_id = 'usr_amelia_ross',
+        introduction = 'Welcome to the Undergraduate Media Habits Survey. Your responses contribute directly to empirical academic research.',
+        consent_statement = 'By continuing, you acknowledge that you are 18+ and consent to anonymous academic data collection.',
+        closing_message = 'Thank you for participating! Your responses have been securely recorded.'
+    WHERE id = 'q_demo_doomscrolling'
+  `).run();
+
+  db.prepare(`
+    UPDATE questionnaire_versions
+    SET instrument_id = ?, instrument_version_id = ?
+    WHERE id = 'qv_demo_doomscrolling_v1'
+  `).run(demoInstId, 'inst_ver_demo_doomscrolling_v1');
+}

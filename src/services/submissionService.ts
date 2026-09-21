@@ -12,13 +12,9 @@ import {
 import { auditService } from './auditService';
 import { projectService, ServiceResult } from './projectService';
 import { questionnaireService } from './questionnaireService';
-import { storage } from './storage';
+import { SubmissionRepository } from '../repositories';
 
-/**
- * Local storage key for raw survey submissions
- * Conforms to namespacing convention: qrp_v1_survey_submissions
- */
-const SUBMISSIONS_KEY = 'survey_submissions';
+let memorySubmissions: SurveySubmission[] = [];
 
 /**
  * Quality heuristic thresholds
@@ -70,11 +66,11 @@ export interface RawCsvExportResult {
 
 export const submissionService = {
   _getAllSubmissions(): SurveySubmission[] {
-    return storage.get<SurveySubmission[]>(SUBMISSIONS_KEY, []);
+    return memorySubmissions;
   },
 
   _saveSubmissions(list: SurveySubmission[]): void {
-    storage.set(SUBMISSIONS_KEY, list);
+    memorySubmissions = list;
   },
 
   /**

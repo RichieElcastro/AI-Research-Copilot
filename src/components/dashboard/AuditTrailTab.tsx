@@ -12,8 +12,8 @@ export const AuditTrailTab: React.FC<AuditTrailTabProps> = ({ projectId }) => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [entityFilter, setEntityFilter] = useState<'all' | AuditEntityType>('all');
 
-  const loadLogs = () => {
-    const projectLogs = auditService.getProjectLogs(projectId);
+  const loadLogs = async () => {
+    const projectLogs = await auditService.getProjectLogs(projectId);
     setLogs(projectLogs);
   };
 
