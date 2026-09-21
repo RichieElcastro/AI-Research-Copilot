@@ -30,6 +30,8 @@ import {
 } from '../../types';
 import { questionnaireService } from '../../services/questionnaireService';
 import { submissionService } from '../../services/submissionService';
+import { SubmissionRepository } from '../../repositories/index';
+import { apiClient } from '../../services/apiClient';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Modal } from '../common/Modal';
@@ -72,9 +74,12 @@ export const DataCollectionDashboard: React.FC<DataCollectionDashboardProps> = (
     latestSubmittedAt: null as string | null,
   });
 
-  const loadData = () => {
+  const loadData = async () => {
     if (!currentUser) return;
     setLoading(true);
+
+    // Ensure session token is active
+    await apiClient.ensureSession(currentUser.id);
 
     const qRes = questionnaireService.getByProject(projectId, currentUser.id);
     if (qRes.success && qRes.data) {
@@ -94,17 +99,56 @@ export const DataCollectionDashboard: React.FC<DataCollectionDashboardProps> = (
           setVersions(vRes.data);
         }
 
-        // Load submissions
-        const subRes = submissionService.getByQuestionnaire(targetQId, projectId, currentUser.id);
-        if (subRes.success && subRes.data) {
-          setSubmissions(subRes.data);
+        // 1. Initial load from local service
+        const localSubRes = submissionService.getByQuestionnaire(targetQId, projectId, currentUser.id);
+        let currentList = localSubRes.success && localSubRes.data ? localSubRes.data : [];
+
+        // 2. Fetch authoritative submissions from central backend server (multi-device)
+        try {
+          const remoteSubs = await SubmissionRepository.getByProject(projectId, targetQId);
+          if (remoteSubs && remoteSubs.length > 0) {
+            // Merge remote into current list
+            const subMap = new Map<string, SurveySubmission>();
+            currentList.forEach(s => subMap.set(s.id, s));
+            remoteSubs.forEach(s => subMap.set(s.id, s));
+            currentList = Array.from(subMap.values());
+
+            // Synchronize with local storage
+            const allSaved = submissionService._getAllSubmissions();
+            const allMap = new Map<string, SurveySubmission>();
+            allSaved.forEach(s => allMap.set(s.id, s));
+            remoteSubs.forEach(s => allMap.set(s.id, s));
+            submissionService._saveSubmissions(Array.from(allMap.values()));
+          }
+        } catch (err) {
+          console.warn('Could not sync remote submissions:', err);
         }
 
-        // Load metrics
-        const countRes = submissionService.countByQuestionnaire(targetQId, projectId, currentUser.id);
-        if (countRes.success && countRes.data) {
-          setMetrics(countRes.data);
+        setSubmissions(currentList);
+
+        // Calculate and set metrics
+        const total = currentList.length;
+        const valid = currentList.filter(s => s.validationStatus === 'Valid').length;
+        const flagged = currentList.filter(s => s.validationStatus === 'Flagged').length;
+        const excluded = currentList.filter(s => s.validationStatus === 'Excluded').length;
+        const totalDuration = currentList.reduce((acc, s) => acc + (s.durationSeconds || 0), 0);
+        const averageDurationSeconds = total > 0 ? Math.round(totalDuration / total) : 0;
+        let latestSubmittedAt: string | null = null;
+        if (total > 0) {
+          const sorted = [...currentList].sort(
+            (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+          );
+          latestSubmittedAt = sorted[0].submittedAt;
         }
+
+        setMetrics({
+          total,
+          valid,
+          flagged,
+          excluded,
+          averageDurationSeconds,
+          latestSubmittedAt,
+        });
       } else {
         setSubmissions([]);
       }

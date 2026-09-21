@@ -17,6 +17,7 @@ import {
   SurveySubmission,
 } from '../../types';
 import { submissionService, StartSurveySessionResult } from '../../services/submissionService';
+import { SubmissionRepository } from '../../repositories/index';
 
 interface ParticipantSurveyPageProps {
   publicSlug: string;
@@ -49,18 +50,45 @@ export const ParticipantSurveyPage: React.FC<ParticipantSurveyPageProps> = ({
 
   // Initialize session
   useEffect(() => {
+    let isMounted = true;
     setLoading(true);
     setLoadError(null);
 
-    const res = submissionService.startSession(publicSlug);
-    if (!res.success || !res.data) {
-      setLoadError(res.error || 'Failed to initialize survey session.');
+    async function initSession() {
+      // 1. Try fetching authoritative public questionnaire from central backend
+      const remoteRes = await SubmissionRepository.getPublicSurvey(publicSlug);
+      if (remoteRes.success && remoteRes.data) {
+        if (!isMounted) return;
+        const publicDto = remoteRes.data;
+        const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        setSessionData({
+          sessionId,
+          startedAt: new Date().toISOString(),
+          questionnaire: publicDto,
+          questionnaireVersionId: publicDto.currentVersionId || publicDto.id,
+        });
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fallback to local storage if running in client-only offline sandbox
+      const localRes = submissionService.startSession(publicSlug);
+      if (!isMounted) return;
+      if (!localRes.success || !localRes.data) {
+        setLoadError(remoteRes.error || localRes.error || 'Failed to initialize survey session.');
+        setLoading(false);
+        return;
+      }
+
+      setSessionData(localRes.data);
       setLoading(false);
-      return;
     }
 
-    setSessionData(res.data);
-    setLoading(false);
+    initSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, [publicSlug]);
 
   const questionnaire: PublicQuestionnaireDTO | undefined = sessionData?.questionnaire;
@@ -128,7 +156,7 @@ export const ParticipantSurveyPage: React.FC<ParticipantSurveyPageProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!sessionData || !questionnaire) return;
     if (!validateQuestions()) {
       setStep('questions');
@@ -138,7 +166,7 @@ export const ParticipantSurveyPage: React.FC<ParticipantSurveyPageProps> = ({
     setIsSubmitting(true);
     setSubmitError(null);
 
-    const submitRes = submissionService.submit({
+    const payload = {
       questionnaireId: questionnaire.id,
       questionnaireVersionId: sessionData.questionnaireVersionId,
       sessionId: sessionData.sessionId,
@@ -147,18 +175,32 @@ export const ParticipantSurveyPage: React.FC<ParticipantSurveyPageProps> = ({
       participantIdentifier:
         questionnaire.responseMode === 'identified' ? participantIdentifier.trim() : undefined,
       rawResponses,
-    });
+    };
 
-    if (!submitRes.success || !submitRes.data) {
-      setSubmitError(submitRes.error || 'Submission was rejected by validation engine.');
+    // 1. Submit to central backend repository (for true multi-device persistence)
+    const remoteRes = await SubmissionRepository.submitPublicSurvey(publicSlug, payload);
+
+    // 2. Also register in local client storage so local state is synchronized
+    const localRes = submissionService.submit(payload);
+
+    if (remoteRes.success && remoteRes.data) {
+      setSubmittedResult(remoteRes.data as SurveySubmission);
       setIsSubmitting(false);
+      setStep('confirmed');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    setSubmittedResult(submitRes.data);
+    if (localRes.success && localRes.data) {
+      setSubmittedResult(localRes.data);
+      setIsSubmitting(false);
+      setStep('confirmed');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setSubmitError(remoteRes.error || localRes.error || 'Submission was rejected by validation engine.');
     setIsSubmitting(false);
-    setStep('confirmed');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // 1. Loading State

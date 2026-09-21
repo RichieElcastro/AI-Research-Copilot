@@ -1,19 +1,36 @@
 import express from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { apiRouter } from './src/server/routes.js';
+import { runAllAcceptanceTests } from './src/server/testSuite.js';
+import { runFullHardeningVerification } from './src/server/hardeningVerification.js';
+export { runRestoreTest, verifyDatabaseIntegrity, createDatabaseBackup, listBackups } from './src/server/backup.js';
+export { runAllAcceptanceTests } from './src/server/testSuite.js';
+export { runFullHardeningVerification } from './src/server/hardeningVerification.js';
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Mount Central Persistent API Router
+app.use('/api', apiRouter);
+
+// API Acceptance Test Suite endpoint
+app.get('/api/test/run-all', (req, res) => {
+  const report = runAllAcceptanceTests();
+  res.json(report);
+});
+
+// API Hardening Verification Suite endpoint
+app.get('/api/test/hardening-report', (req, res) => {
+  const report = runFullHardeningVerification();
+  res.json(report);
+});
 
 // API health endpoint
 app.get('/api/health', (req, res) => {
@@ -21,6 +38,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     environment: process.env.NODE_ENV || 'development',
     hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+    database: 'SQLite Relational Central DB (WAL Mode)',
   });
 });
 
@@ -319,4 +337,6 @@ async function startServer() {
   });
 }
 
-startServer();
+if (process.env.SKIP_SERVER_LISTEN !== 'true') {
+  startServer();
+}

@@ -616,10 +616,18 @@ export const submissionService = {
    * Deterministic Raw CSV Export
    * Output strictly preserves raw submitted text/values without numeric coding or reverse coding.
    */
+  /**
+   * Deterministic Raw CSV Export (FIXED FOR VERSION LINEAGE)
+   * Output strictly preserves raw submitted text/values without numeric coding or reverse coding.
+   * Crucial rule: Every submission export uses the questionnaire version snapshot associated with THAT submission.
+   * If a targetVersionId is provided, exports strictly according to that version snapshot.
+   * When exporting multi-version datasets, columns preserve the complete union of distinct items without truncating older items.
+   */
   exportRawData(
     questionnaireId: string,
     projectId: string,
-    userId: string
+    userId: string,
+    targetVersionId?: string
   ): ServiceResult<RawCsvExportResult> {
     const pCheck = projectService.getProject(projectId, userId);
     if (!pCheck.success) {
@@ -633,15 +641,17 @@ export const submissionService = {
       return { success: false, error: 'Questionnaire not found.', statusCode: 404 };
     }
 
-    // Get versions to determine stable item order
+    // Get all versions for this questionnaire
     const versions = questionnaireService._getAllVersions().filter(v => v.questionnaireId === q.id);
     if (versions.length === 0) {
       return { success: false, error: 'No questionnaire versions found.', statusCode: 400 };
     }
 
-    // Sort versions by versionNumber descending to get items list (union of all items or latest)
-    const latestVersion = [...versions].sort((a, b) => b.versionNumber - a.versionNumber)[0];
-    const orderedItems = [...latestVersion.itemsSnapshot].sort((a, b) => a.itemNumber - b.itemNumber);
+    // Map each versionId to its locked itemsSnapshot
+    const versionMap = new Map<string, QuestionnaireVersion>();
+    for (const v of versions) {
+      versionMap.set(v.id, v);
+    }
 
     // Get submissions
     const submissionsRes = this.getByQuestionnaire(questionnaireId, projectId, userId);
@@ -649,16 +659,40 @@ export const submissionService = {
       return { success: false, error: submissionsRes.error, statusCode: submissionsRes.statusCode };
     }
 
-    const submissions = submissionsRes.data.filter(s => s.status === 'Submitted');
+    let submissions = submissionsRes.data.filter(s => s.status === 'Submitted');
+    if (targetVersionId) {
+      submissions = submissions.filter(s => s.questionnaireVersionId === targetVersionId);
+    }
+
+    // Determine export item codes:
+    // If targetVersionId is specified: strictly use that version's item codes in order!
+    // If exporting all submissions: build full ordered union of all distinct item codes across versions
+    // ensuring older items (e.g. Q3 from v1 removed in v2) are NEVER dropped or lost.
+    let exportItemCodes: string[] = [];
+    if (targetVersionId && versionMap.has(targetVersionId)) {
+      exportItemCodes = versionMap.get(targetVersionId)!.itemsSnapshot.map(i => i.itemCode);
+    } else {
+      const seen = new Set<string>();
+      // Order from earliest version to newest version to preserve chronological item appearance
+      const sortedVersions = [...versions].sort((a, b) => a.versionNumber - b.versionNumber);
+      for (const v of sortedVersions) {
+        for (const item of v.itemsSnapshot) {
+          if (!seen.has(item.itemCode)) {
+            seen.add(item.itemCode);
+            exportItemCodes.push(item.itemCode);
+          }
+        }
+      }
+    }
 
     // Build CSV header
-    // Metadata columns + one column per item code
     const metaHeaders = [
       'submission_id',
       'session_id',
       'participant_mode',
       'participant_identifier',
       'questionnaire_version',
+      'questionnaire_version_id',
       'started_at',
       'submitted_at',
       'duration_seconds',
@@ -666,8 +700,7 @@ export const submissionService = {
       'validation_flags',
     ];
 
-    const itemHeaders = orderedItems.map(item => item.itemCode);
-    const headers = [...metaHeaders, ...itemHeaders];
+    const headers = [...metaHeaders, ...exportItemCodes];
 
     const escapeCsv = (str: string | number | null | undefined): string => {
       if (str === null || str === undefined) return '""';
@@ -679,12 +712,17 @@ export const submissionService = {
     rows.push(headers.join(','));
 
     for (const sub of submissions) {
+      // Determine this submission's authoritative version snapshot
+      const subVersion = versionMap.get(sub.questionnaireVersionId);
+      const validCodesForSub = new Set(subVersion?.itemsSnapshot.map(i => i.itemCode) || []);
+
       const rowVals: string[] = [
         escapeCsv(sub.id),
         escapeCsv(sub.sessionId),
         escapeCsv(sub.participantMode),
         escapeCsv(sub.participantIdentifier || ''),
         escapeCsv(sub.questionnaireVersion),
+        escapeCsv(sub.questionnaireVersionId),
         escapeCsv(sub.startedAt),
         escapeCsv(sub.submittedAt),
         escapeCsv(sub.durationSeconds),
@@ -692,9 +730,15 @@ export const submissionService = {
         escapeCsv(sub.validationFlags.join('; ')),
       ];
 
-      for (const item of orderedItems) {
-        const rawVal = sub.rawResponses[item.itemCode] ?? '';
-        rowVals.push(escapeCsv(rawVal));
+      for (const code of exportItemCodes) {
+        // Only output raw response if this question was actually part of this submission's version!
+        if (validCodesForSub.has(code)) {
+          const rawVal = sub.rawResponses[code] ?? '';
+          rowVals.push(escapeCsv(rawVal));
+        } else {
+          // Question did not exist in this version snapshot -> empty string
+          rowVals.push('""');
+        }
       }
 
       rows.push(rowVals.join(','));
@@ -702,7 +746,8 @@ export const submissionService = {
 
     const csvContent = rows.join('\r\n');
     const safeTitle = q.title.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-    const filename = `raw_responses_${safeTitle}_v${q.currentVersion}_${new Date().toISOString().split('T')[0]}.csv`;
+    const vLabel = targetVersionId ? `_v${versionMap.get(targetVersionId)?.versionNumber || 'X'}` : '_all_versions';
+    const filename = `raw_responses_${safeTitle}${vLabel}_${new Date().toISOString().split('T')[0]}.csv`;
 
     return {
       success: true,

@@ -86,6 +86,7 @@ export interface PublicQuestionnaireDTO {
   responseMode: ResponseMode;
   status: QuestionnaireStatus;
   currentVersion: number;
+  currentVersionId?: string;
   startDate?: string;
   endDate?: string;
   items: QuestionnaireItemSnapshot[];
