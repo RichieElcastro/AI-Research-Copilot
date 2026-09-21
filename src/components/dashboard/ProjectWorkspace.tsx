@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { projectService } from '../../services/projectService';
 import { variableService } from '../../services/variableService';
 import { ResearchProject } from '../../types';
@@ -41,6 +42,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const { success, error, info } = useToast();
+  const { language, t } = useLanguage();
 
   const [project, setProject] = useState<ResearchProject | null>(null);
   const [variableCount, setVariableCount] = useState(0);
@@ -137,7 +139,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                All Projects
+                {language === 'id' ? 'Semua Proyek' : 'All Projects'}
               </button>
 
               <div className="h-4 w-px bg-slate-200 hidden sm:block" />
@@ -164,7 +166,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 title="View Empirical Audit Trail"
               >
                 <History className="w-3.5 h-3.5" />
-                Audit Trail
+                {t.stages.audit}
               </button>
 
               <button
@@ -175,7 +177,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 title="Export operational research blueprint"
               >
                 <FileCode className="w-3.5 h-3.5 text-indigo-600" />
-                Export JSON
+                {language === 'id' ? 'Ekspor JSON' : 'Export JSON'}
               </button>
 
               <button
@@ -186,7 +188,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 title="Execute security authorization tests to verify isolation against other researchers"
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
-                Security Audit
+                {t.navbar.securityAudit}
               </button>
             </div>
           </div>

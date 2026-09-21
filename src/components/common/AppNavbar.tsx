@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { FlaskConical, ShieldCheck, ShieldAlert, FolderKanban } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { UserMenu } from '../auth/UserMenu';
 import { AuthModal } from '../auth/AuthModal';
 import { SecurityTestModal } from '../projects/SecurityTestModal';
+import { LanguageSelector } from './LanguageSelector';
 
 interface AppNavbarProps {
   onNavigateHome: () => void;
@@ -15,6 +17,7 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
   activeProjectTitle,
 }) => {
   const { currentUser } = useAuth();
+  const { t } = useLanguage();
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
 
@@ -34,25 +37,28 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-bold text-slate-900 text-sm sm:text-base tracking-tight group-hover:text-indigo-600 transition-colors">
-                  Quantitative Research Platform
+                  {t.navbar.brandTitle}
                 </span>
                 <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border border-slate-200">
-                  Phase 1 Core
+                  {t.navbar.phase}
                 </span>
               </div>
               <p className="text-xs text-slate-700 truncate max-w-xs sm:max-w-sm">
-                {activeProjectTitle ? `Workspace: ${activeProjectTitle}` : 'Empirical Research & Operationalization Studio'}
+                {activeProjectTitle ? `${t.navbar.workspace}: ${activeProjectTitle}` : t.navbar.defaultSubtitle}
               </p>
             </div>
           </div>
 
           {/* Right Action & User Isolation Controls */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Integrity Badge */}
-            <div className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-md text-xs font-medium">
+            <div className="hidden xl:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-md text-xs font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-              <span>Data Integrity & Audit Lineage</span>
+              <span>{t.navbar.dataIntegrity}</span>
             </div>
+
+            {/* Language Selector */}
+            <LanguageSelector variant="compact" />
 
             {/* Security Isolation Test Button */}
             <button
@@ -63,7 +69,7 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
               title="Execute security authorization tests to verify isolation against other researchers"
             >
               <ShieldAlert className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Security Audit</span>
+              <span className="hidden sm:inline">{t.navbar.securityAudit}</span>
             </button>
 
             {/* Back to Project Directory Button if inside a project */}
@@ -76,7 +82,7 @@ export const AppNavbar: React.FC<AppNavbarProps> = ({
                 title="View All Projects"
               >
                 <FolderKanban className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Projects</span>
+                <span className="hidden sm:inline">{t.navbar.projects}</span>
               </button>
             )}
 

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, LogOut, Users, ShieldAlert, ChevronDown, Check } from 'lucide-react';
+import { User, LogOut, Users, ShieldAlert, ChevronDown, Check, Globe } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface UserMenuProps {
   onOpenAuth: () => void;
@@ -11,6 +12,7 @@ interface UserMenuProps {
 export const UserMenu: React.FC<UserMenuProps> = ({ onOpenAuth, onOpenSecurityTest }) => {
   const { currentUser, users, logout, switchUser } = useAuth();
   const { success, info } = useToast();
+  const { language, setLanguage, t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -33,7 +35,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onOpenAuth, onOpenSecurityTe
         className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors"
       >
         <User className="w-3.5 h-3.5" />
-        Sign In / Register
+        {t.navbar.signInRegister}
       </button>
     );
   }
@@ -41,13 +43,19 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onOpenAuth, onOpenSecurityTe
   const handleSwitch = (userId: string, userName: string) => {
     switchUser(userId);
     setIsOpen(false);
-    success('User Session Switched', `Now operating as ${userName}. Project data is strictly isolated.`);
+    success(
+      language === 'id' ? 'Sesi Peneliti Berpindah' : 'User Session Switched',
+      language === 'id' ? `Sekarang beroperasi sebagai ${userName}. Data proyek terisolasi ketat.` : `Now operating as ${userName}. Project data is strictly isolated.`
+    );
   };
 
   const handleLogout = () => {
     logout();
     setIsOpen(false);
-    info('Logged Out', 'You have been safely signed out from the research workspace.');
+    info(
+      language === 'id' ? 'Berhasil Keluar' : 'Logged Out',
+      language === 'id' ? 'Anda telah keluar dengan aman dari ruang kerja penelitian.' : 'You have been safely signed out from the research workspace.'
+    );
   };
 
   return (
@@ -88,15 +96,48 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onOpenAuth, onOpenSecurityTe
             )}
             <div className="mt-2">
               <span className="inline-block text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                Authenticated {currentUser.role}
+                {language === 'id' ? `Peneliti Terotentikasi (${currentUser.role})` : `Authenticated ${currentUser.role}`}
               </span>
+            </div>
+          </div>
+
+          {/* Language selection inside user popover */}
+          <div className="px-3 py-2 border-b border-slate-100">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+              <Globe className="w-3 h-3" /> {t.navbar.language}
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setLanguage('id')}
+                className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all ${
+                  language === 'id'
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-2xs'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span>🇮🇩</span>
+                <span>Indonesia</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLanguage('en')}
+                className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all ${
+                  language === 'en'
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-2xs'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span>🇬🇧</span>
+                <span>English</span>
+              </button>
             </div>
           </div>
 
           {/* User isolation quick-switch (for testing cross-account isolation) */}
           <div className="px-3 py-2 border-b border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-              <Users className="w-3 h-3" /> Switch Researcher Account
+              <Users className="w-3 h-3" /> {t.navbar.switchAccount}
             </p>
             <div className="space-y-1">
               {users.map(u => (
@@ -133,7 +174,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onOpenAuth, onOpenSecurityTe
               className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-700 hover:bg-amber-50 rounded-lg transition-colors font-medium"
             >
               <ShieldAlert className="w-4 h-4 text-amber-600" />
-              Verify Security & Cross-Access Isolation
+              {language === 'id' ? 'Verifikasi Keamanan & Isolasi Data' : 'Verify Security & Cross-Access Isolation'}
             </button>
           </div>
 
@@ -146,7 +187,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onOpenAuth, onOpenSecurityTe
               className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-700 hover:bg-rose-50 rounded-lg transition-colors font-medium"
             >
               <LogOut className="w-4 h-4 text-rose-600" />
-              Sign Out
+              {t.navbar.signOut}
             </button>
           </div>
         </div>

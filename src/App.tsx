@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ToastProvider } from './context/ToastContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { AppNavbar } from './components/common/AppNavbar';
 import { ProjectList } from './components/projects/ProjectList';
 import { ProjectWorkspace } from './components/dashboard/ProjectWorkspace';
@@ -10,6 +11,7 @@ import { ShieldCheck } from 'lucide-react';
 
 function MainContent() {
   const { currentUser } = useAuth();
+  const { t } = useLanguage();
   const [activeProject, setActiveProject] = useState<ResearchProject | null>(null);
   const [surveySlug, setSurveySlug] = useState<string | null>(null);
 
@@ -67,13 +69,13 @@ function MainContent() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span className="font-semibold text-slate-800">Quantitative Research Platform</span>
+            <span className="font-semibold text-slate-800">{t.navbar.brandTitle}</span>
             <span className="text-slate-400">•</span>
-            <span>Stages 1–5: Foundation, Variables, Instruments, Questionnaires &amp; Data Collection</span>
+            <span>{t.navbar.defaultSubtitle}</span>
           </div>
           <div className="flex items-center gap-2 text-slate-500">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Deterministic Business Logic • Strict Cross-Researcher Data Isolation</span>
+            <span>{t.common.academicFooter}</span>
           </div>
         </div>
       </footer>
@@ -84,9 +86,12 @@ function MainContent() {
 export default function App() {
   return (
     <ToastProvider>
-      <AuthProvider>
-        <MainContent />
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <MainContent />
+        </AuthProvider>
+      </LanguageProvider>
     </ToastProvider>
   );
 }
+

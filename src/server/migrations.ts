@@ -465,6 +465,13 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE instrument_versions ADD COLUMN change_summary TEXT;
     `,
   },
+  {
+    version: 5,
+    name: '005_questionnaires_is_archived',
+    sql: `
+      ALTER TABLE questionnaires ADD COLUMN is_archived INTEGER DEFAULT 0;
+    `,
+  },
 ];
 
 /**
@@ -515,8 +522,24 @@ export function runMigrations(database: DatabaseSync): {
       appliedCount++;
       currentVersion = migration.version;
       console.log(`[Database Migration] Applied migration #${migration.version}: ${migration.name}`);
-    } catch (err) {
+    } catch (err: any) {
       database.exec('ROLLBACK;');
+      // If error is duplicate column, it was already applied in ad-hoc schema update, record it as applied
+      if (err?.message && err.message.includes('duplicate column name')) {
+        try {
+          database
+            .prepare(
+              'INSERT INTO _schema_migrations (version, name, applied_at, checksum) VALUES (?, ?, ?, ?)'
+            )
+            .run(migration.version, migration.name, now, checksum);
+          appliedCount++;
+          currentVersion = migration.version;
+          console.log(`[Database Migration] Migration #${migration.version} column already present, marked as applied.`);
+          continue;
+        } catch {
+          // ignore
+        }
+      }
       console.error(`[Database Migration] Failed migration #${migration.version}: ${migration.name}`, err);
       throw new Error(`Database migration #${migration.version} failed: ${err}`);
     }

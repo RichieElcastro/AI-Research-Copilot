@@ -138,17 +138,33 @@ apiRouter.get('/public/surveys/:slug', publicSurveyRateLimiter, (req: Request, r
   // Safe DTO: Strips internal database IDs, researcher identity, hypotheses, processing rules
   const publicDto = {
     id: q.id,
-    versionId: v.id,
-    versionNumber: v.version_number,
+    publicSlug: q.slug,
     slug: q.slug,
     title: v.title || q.title,
-    description: q.description,
-    instructions: v.instructions || q.instructions,
+    description: q.description || '',
+    instructions: v.instructions || q.instructions || '',
+    introduction: v.instructions || q.instructions || '',
+    consentStatement: q.consent_statement || '',
+    closingMessage: q.closing_message || '',
     responseMode: q.response_mode,
     anonymityMode: q.anonymity_mode,
+    status: q.status,
+    versionId: v.id,
+    versionNumber: v.version_number,
+    currentVersion: v.version_number,
+    currentVersionId: v.id,
     allowMultipleSubmissions: Boolean(q.allow_multiple_submissions),
     closeDate: q.close_date,
-    items,
+    items: items.map((i: any) => ({
+      id: i.id,
+      itemCode: i.itemCode,
+      itemNumber: i.itemNumber,
+      questionText: i.questionText,
+      itemType: i.itemType,
+      scaleOptions: i.scaleOptions || [],
+      required: Boolean(i.required),
+      reverseCoded: Boolean(i.reverseCoded),
+    })),
     scales,
     publishedAt: v.published_at,
   };
@@ -210,7 +226,15 @@ apiRouter.post('/public/surveys/:slug/submissions', publicSubmissionRateLimiter,
   }
 
   // Verify version snapshot
-  const v = db.prepare('SELECT id, version_number, items_snapshot_json FROM questionnaire_versions WHERE id = ?').get(questionnaireVersionId) as any;
+  const targetVersionId = questionnaireVersionId || (
+    db.prepare('SELECT id FROM questionnaire_versions WHERE questionnaire_id = ? ORDER BY version_number DESC LIMIT 1').get(q.id) as any
+  )?.id;
+
+  if (!targetVersionId) {
+    return res.status(400).json({ success: false, error: 'No published version found for this questionnaire.' });
+  }
+
+  const v = db.prepare('SELECT id, version_number, items_snapshot_json FROM questionnaire_versions WHERE id = ?').get(targetVersionId) as any;
   if (!v) {
     return res.status(400).json({ success: false, error: 'Invalid questionnaire version snapshot reference.' });
   }
@@ -930,7 +954,7 @@ apiRouter.post('/projects/:projectId/instruments/:id/items', authenticate, requi
     return res.status(403).json({ success: false, error: 'Cannot add items to an approved instrument. Approved instruments are locked.' });
   }
 
-  const { itemCode, itemNumber, questionText, itemType, variableId, dimensionId, indicatorId, responseScaleId, required, reverseCoded, source, notes, aiCandidateId, aiGenerationId, aiRationale } = req.body;
+  const { itemCode, itemNumber, questionText, itemType, variableId, dimensionId, indicatorId, responseScaleId, required, reverseCoded, source, notes, aiCandidateId, aiGenerationId, originalAiText } = req.body;
 
   if (!itemCode || !questionText) {
     return res.status(400).json({ success: false, error: 'Item code and question text are required' });
@@ -943,14 +967,14 @@ apiRouter.post('/projects/:projectId/instruments/:id/items', authenticate, requi
     INSERT INTO instrument_items (
       id, instrument_id, project_id, item_code, item_number, question_text, item_type,
       variable_id, dimension_id, indicator_id, response_scale_id, required, reverse_coded,
-      status, source, notes, ai_candidate_id, ai_generation_id, ai_rationale, created_at, updated_at
+      status, source, notes, ai_candidate_id, ai_generation_id, original_ai_text, created_at, updated_at
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
   `).run(
     itemId, id, projectId, itemCode.trim(), itemNumber || 1, questionText.trim(), itemType || 'Likert',
     variableId || null, dimensionId || null, indicatorId || null, responseScaleId || null,
     required ? 1 : 0, reverseCoded ? 1 : 0, source || null, notes || null,
-    aiCandidateId || null, aiGenerationId || null, aiRationale || null, now, now
+    aiCandidateId || null, aiGenerationId || null, originalAiText || null, now, now
   );
 
   res.status(201).json({
@@ -974,7 +998,7 @@ apiRouter.post('/projects/:projectId/instruments/:id/items', authenticate, requi
       notes,
       aiCandidateId,
       aiGenerationId,
-      aiRationale,
+      originalAiText,
       createdAt: now,
       updatedAt: now,
     },
@@ -1047,6 +1071,30 @@ apiRouter.post('/projects/:projectId/instruments/:id/approve', authenticate, req
   }
 
   const scales = db.prepare('SELECT * FROM response_scales WHERE project_id = ? AND is_archived = 0').all(projectId) as any[];
+  const scalesMap = new Map<string, any>(scales.map(s => [s.id, { ...s, options: JSON.parse(s.options_json || '[]') }]));
+
+  // Canonical camelCase snapshot with explicit scale options
+  const canonicalItems = items.map(it => {
+    const scale = it.response_scale_id ? scalesMap.get(it.response_scale_id) : undefined;
+    return {
+      id: it.id,
+      itemCode: it.item_code,
+      itemNumber: it.item_number,
+      questionText: it.question_text,
+      itemType: it.item_type,
+      variableId: it.variable_id,
+      dimensionId: it.dimension_id || undefined,
+      indicatorId: it.indicator_id || undefined,
+      responseScaleId: it.response_scale_id || undefined,
+      responseScaleName: scale?.name,
+      responseScaleType: scale?.scale_type,
+      scaleOptions: scale?.options || [],
+      required: Boolean(it.required),
+      reverseCoded: Boolean(it.reverse_coded),
+      source: it.source || undefined,
+      notes: it.notes || undefined,
+    };
+  });
 
   // Determine version number
   const existingVers = db.prepare('SELECT MAX(version_number) as maxVer FROM instrument_versions WHERE instrument_id = ?').get(id) as any;
@@ -1070,10 +1118,10 @@ apiRouter.post('/projects/:projectId/instruments/:id/approve', authenticate, req
       id,
       projectId,
       nextVersionNumber,
-      JSON.stringify({ items, scales }),
-      JSON.stringify(items),
-      JSON.stringify(scales),
-      validationSummary ? JSON.stringify(validationSummary) : JSON.stringify({ passed: true, itemCount: items.length }),
+      JSON.stringify({ items: canonicalItems, scales }),
+      JSON.stringify(canonicalItems),
+      JSON.stringify(scales.map(s => ({ ...s, options: JSON.parse(s.options_json || '[]') }))),
+      validationSummary ? JSON.stringify(validationSummary) : JSON.stringify({ passed: true, itemCount: canonicalItems.length }),
       `Version ${versionString} psychometric approval`,
       req.user!.name,
       now,
@@ -1272,7 +1320,7 @@ apiRouter.put('/projects/:projectId/questionnaires/:id', authenticate, requirePr
   const {
     instrumentId, title, description, instructions, responseMode, anonymityMode,
     slug, allowMultipleSubmissions, closeDate, introduction, consentStatement,
-    closingMessage, startDate, endDate, maxResponses
+    closingMessage, startDate, endDate, maxResponses, isArchived, status
   } = req.body;
 
   const now = new Date().toISOString();
@@ -1293,6 +1341,8 @@ apiRouter.put('/projects/:projectId/questionnaires/:id', authenticate, requirePr
       start_date = COALESCE(?, start_date),
       end_date = COALESCE(?, end_date),
       max_responses = COALESCE(?, max_responses),
+      is_archived = COALESCE(?, is_archived),
+      status = COALESCE(?, status),
       updated_at = ?
     WHERE id = ?
   `).run(
@@ -1300,6 +1350,8 @@ apiRouter.put('/projects/:projectId/questionnaires/:id', authenticate, requirePr
     slug ? slug.toLowerCase().replace(/[^a-z0-9_-]/g, '-') : null,
     allowMultipleSubmissions !== undefined ? (allowMultipleSubmissions ? 1 : 0) : null,
     closeDate, introduction, consentStatement, closingMessage, startDate, endDate, maxResponses,
+    isArchived !== undefined ? (isArchived ? 1 : 0) : null,
+    status || null,
     now, id
   );
 
@@ -1334,16 +1386,37 @@ apiRouter.post('/projects/:projectId/questionnaires/:id/publish', authenticate, 
     return res.status(400).json({ success: false, error: 'Cannot publish questionnaire: No measurement instrument is linked to this questionnaire.' });
   }
 
-  const finalItems = db.prepare('SELECT * FROM instrument_items WHERE instrument_id = ? ORDER BY item_number ASC').all(q.instrument_id) as any[];
-  if (!finalItems || finalItems.length === 0) {
-    return res.status(400).json({ success: false, error: 'Cannot publish questionnaire: Linked instrument has zero measurement items.' });
+  // D3: Enforce that linked instrument must be Approved before questionnaire publication
+  const approvedInstVer = db.prepare(`
+    SELECT id, version_number, status, items_snapshot_json, scales_snapshot_json
+    FROM instrument_versions
+    WHERE instrument_id = ? AND status = 'Approved'
+    ORDER BY version_number DESC LIMIT 1
+  `).get(q.instrument_id) as any;
+
+  if (!approvedInstVer) {
+    return res.status(400).json({
+      success: false,
+      error: 'Cannot publish questionnaire: Linked instrument has not been approved. Instruments must be psychometrically approved before publishing questionnaires.',
+    });
   }
 
-  const latestInstVer = db.prepare('SELECT id FROM instrument_versions WHERE instrument_id = ? ORDER BY version_number DESC LIMIT 1').get(q.instrument_id) as any;
-  const instrumentVersionId = latestInstVer ? latestInstVer.id : null;
+  let finalItems: any[] = [];
+  if (approvedInstVer.items_snapshot_json) {
+    try {
+      finalItems = JSON.parse(approvedInstVer.items_snapshot_json);
+    } catch {
+      finalItems = [];
+    }
+  }
 
+  if (!finalItems || finalItems.length === 0) {
+    return res.status(400).json({ success: false, error: 'Cannot publish questionnaire: Linked instrument approved version contains zero measurement items.' });
+  }
+
+  const instrumentVersionId = approvedInstVer.id;
   const scales = db.prepare('SELECT * FROM response_scales WHERE project_id = ? AND is_archived = 0').all(projectId) as any[];
-  const finalScales = scales.map(s => ({ ...s, options: JSON.parse(s.options_json) }));
+  const finalScales = scales.map(s => ({ ...s, options: JSON.parse(s.options_json || '[]') }));
 
   const newVersionNumber = (q.current_version || 1) + (q.status === 'Active' ? 1 : 0);
   const versionId = `qv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -1458,6 +1531,26 @@ apiRouter.post('/projects/:projectId/questionnaires/:id/close', authenticate, re
   const now = new Date().toISOString();
   db.prepare("UPDATE questionnaires SET status = 'Closed', updated_at = ? WHERE id = ?").run(now, id);
   res.json({ success: true, status: 'Closed' });
+});
+
+// Archive questionnaire
+apiRouter.post('/projects/:projectId/questionnaires/:id/archive', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const q = db.prepare('SELECT status FROM questionnaires WHERE id = ?').get(id) as any;
+  if (!q) return res.status(404).json({ success: false, error: 'Questionnaire not found' });
+  const now = new Date().toISOString();
+  db.prepare("UPDATE questionnaires SET is_archived = 1, status = 'Archived', updated_at = ? WHERE id = ?").run(now, id);
+  res.json({ success: true, status: 'Archived', isArchived: true });
+});
+
+// Unarchive questionnaire
+apiRouter.post('/projects/:projectId/questionnaires/:id/unarchive', authenticate, requireProjectAccess, (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const q = db.prepare('SELECT status FROM questionnaires WHERE id = ?').get(id) as any;
+  if (!q) return res.status(404).json({ success: false, error: 'Questionnaire not found' });
+  const now = new Date().toISOString();
+  db.prepare("UPDATE questionnaires SET is_archived = 0, status = 'Draft', updated_at = ? WHERE id = ?").run(now, id);
+  res.json({ success: true, status: 'Draft', isArchived: false });
 });
 
 // Get questionnaire versions

@@ -1,5 +1,11 @@
-import { db } from './db.js';
+import { db, createDatabase, DB_PATH } from './db.js';
 import { createSession } from './auth.js';
+import {
+  getDomainTables,
+  verifyAllDomainTablesCovered,
+  runRestoreTest,
+  calculateAllDomainChecksums,
+} from './backup.js';
 
 export interface TestResult {
   name: string;
@@ -256,6 +262,107 @@ export function runAllAcceptanceTests(): {
     }
     if (scoreRecord.questionnaire_version_id !== 'qv_demo_doomscrolling_v1') {
       throw new Error('Scoring run failed to link to questionnaire version ID');
+    }
+  });
+
+  // TEST SUITE 5: Backup Domain Coverage, Round-Trip Integrity & Isolated DB
+  record('AC-1 Dynamic Domain Tables Discovery & FK Order', 'Backup & Disaster Recovery', () => {
+    const domainTables = getDomainTables(db);
+    const requiredTables = [
+      'users', 'projects', 'variables', 'dimensions', 'indicators',
+      'response_scales', 'instruments', 'instrument_items', 'instrument_versions',
+      'questionnaires', 'questionnaire_versions', 'survey_submissions',
+      'processing_runs', 'processed_datasets', 'codebooks',
+      'scoring_rules', 'scoring_runs', 'scored_datasets',
+      'ai_generations', 'ai_candidates', 'audit_logs'
+    ];
+
+    for (const table of requiredTables) {
+      if (!domainTables.includes(table)) {
+        throw new Error(`Required domain table missing from backup coverage: ${table}`);
+      }
+    }
+
+    // Verify foreign key dependency order (parents before children)
+    const userIdx = domainTables.indexOf('users');
+    const projIdx = domainTables.indexOf('projects');
+    const instIdx = domainTables.indexOf('instruments');
+    const itemIdx = domainTables.indexOf('instrument_items');
+    const qIdx = domainTables.indexOf('questionnaires');
+    const qvIdx = domainTables.indexOf('questionnaire_versions');
+    const subIdx = domainTables.indexOf('survey_submissions');
+    const procIdx = domainTables.indexOf('processing_runs');
+    const scrunIdx = domainTables.indexOf('scoring_runs');
+
+    if (userIdx > projIdx) throw new Error('FK order violation: users must precede projects');
+    if (projIdx > instIdx) throw new Error('FK order violation: projects must precede instruments');
+    if (instIdx > itemIdx) throw new Error('FK order violation: instruments must precede instrument_items');
+    if (projIdx > qIdx) throw new Error('FK order violation: projects must precede questionnaires');
+    if (qIdx > qvIdx) throw new Error('FK order violation: questionnaires must precede questionnaire_versions');
+    if (qvIdx > subIdx) throw new Error('FK order violation: questionnaire_versions must precede survey_submissions');
+    if (projIdx > procIdx) throw new Error('FK order violation: projects must precede processing_runs');
+    if (procIdx > scrunIdx) throw new Error('FK order violation: processing_runs must precede scoring_runs');
+  });
+
+  record('AC-2 Isolated Round-Trip Backup and Restore Verification', 'Backup & Disaster Recovery', () => {
+    const report = runRestoreTest();
+    if (report.overallStatus !== 'PASS') {
+      const failed = report.steps.filter(s => !s.passed).map(s => `${s.step}: ${s.name} (${s.error})`).join('; ');
+      throw new Error(`Restore test failed with status ${report.overallStatus}: ${failed}`);
+    }
+    if (report.passedSteps < 13) {
+      throw new Error(`Insufficient steps verified in restore test: ${report.passedSteps}`);
+    }
+  });
+
+  record('AC-3 Guard Test Fails on Omitted Domain Table', 'Backup & Disaster Recovery', () => {
+    let errorCaught = false;
+    try {
+      // Incomplete list omitting almost all domain tables
+      verifyAllDomainTablesCovered(db, ['users', 'projects']);
+    } catch (err: any) {
+      errorCaught = true;
+      if (!err.message.includes('Guard test failure') || !err.message.includes('missing from backup/restore')) {
+        throw new Error(`Unexpected error message from guard test: ${err.message}`);
+      }
+    }
+
+    if (!errorCaught) {
+      throw new Error('Guard test did not fail when domain tables were omitted!');
+    }
+  });
+
+  record('AC-4 Isolated DB Integrity and Main DB Immutability', 'Backup & Disaster Recovery', () => {
+    const mainChecksumsBefore = calculateAllDomainChecksums(db);
+
+    // Create a temporary isolated database
+    const tempDbPath = `/tmp/temp_test_db_${Date.now()}.db`;
+    const tempDb = createDatabase(tempDbPath);
+
+    try {
+      // Perform operations on temp DB
+      const report = runRestoreTest(tempDb);
+      if (report.overallStatus !== 'PASS') {
+        throw new Error('Restore test on custom isolated DB failed');
+      }
+
+      // Check main database checksums afterwards to guarantee 0 mutations
+      const mainChecksumsAfter = calculateAllDomainChecksums(db);
+      for (const [table, beforeMeta] of Object.entries(mainChecksumsBefore)) {
+        const afterMeta = mainChecksumsAfter[table];
+        if (!afterMeta || afterMeta.rowCount !== beforeMeta.rowCount || afterMeta.checksum !== beforeMeta.checksum) {
+          throw new Error(`Main database was polluted during isolated test in table ${table}!`);
+        }
+      }
+    } finally {
+      try {
+        tempDb.close();
+      } catch {}
+      try {
+        import('fs').then(fs => {
+          if (fs.existsSync(tempDbPath)) fs.unlinkSync(tempDbPath);
+        });
+      } catch {}
     }
   });
 

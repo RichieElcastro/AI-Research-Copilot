@@ -14,6 +14,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { WorkflowStage } from '../../types';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface WorkflowTrackerProps {
   currentStage: 'setup' | 'variables' | 'instruments' | 'questionnaire' | 'collection' | 'processing' | 'scoring' | 'audit';
@@ -109,6 +110,35 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
   onSelectStage,
   variableCount,
 }) => {
+  const { language, t } = useLanguage();
+
+  const getStageLocalizedInfo = (id: number) => {
+    switch (id) {
+      case 1:
+        return { name: t.stages.setup, desc: t.stages.setupDesc };
+      case 2:
+        return { name: t.stages.variables, desc: t.stages.variablesDesc };
+      case 3:
+        return { name: t.stages.instruments, desc: t.stages.instrumentsDesc };
+      case 4:
+        return { name: t.stages.questionnaire, desc: t.stages.questionnaireDesc };
+      case 5:
+        return { name: t.stages.collection, desc: t.stages.collectionDesc };
+      case 6:
+        return { name: t.stages.processing, desc: t.stages.processingDesc };
+      case 7:
+        return { name: t.stages.scoring, desc: t.stages.scoringDesc };
+      case 8:
+        return { name: t.stages.analysis, desc: t.stages.analysisDesc };
+      case 9:
+        return { name: t.stages.results, desc: t.stages.resultsDesc };
+      case 10:
+        return { name: t.stages.export, desc: t.stages.exportDesc };
+      default:
+        return { name: `Stage ${id}`, desc: '' };
+    }
+  };
+
   const getStageIcon = (id: number) => {
     switch (id) {
       case 1:
@@ -143,14 +173,14 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
         <div className="flex items-center justify-between gap-2 mb-2.5">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Quantitative Research Workflow
+              {language === 'id' ? 'Alur Kerja Penelitian Kuantitatif' : 'Quantitative Research Workflow'}
             </span>
             <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-              Phase 1, 2, 3, 4, 5 &amp; 6 Active (Stages 1–7)
+              {language === 'id' ? 'Tahap 1–7 Aktif (Persiapan s.d. Skoring)' : 'Phase 1–6 Active (Stages 1–7)'}
             </span>
           </div>
           <span className="text-xs text-slate-700 font-medium">
-            {variableCount} {variableCount === 1 ? 'Construct defined' : 'Constructs defined'}
+            {variableCount} {language === 'id' ? 'Konstruk terdefinisi' : (variableCount === 1 ? 'Construct defined' : 'Constructs defined')}
           </span>
         </div>
 
@@ -158,6 +188,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
         <div className="overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-300">
           <div className="flex items-center gap-1.5 min-w-max">
             {WORKFLOW_STAGES.map(stage => {
+              const localized = getStageLocalizedInfo(stage.id);
               const isFunctional = stage.isImplemented;
               const isSelected =
                 (stage.id === 1 && currentStage === 'setup') ||
@@ -185,8 +216,8 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
                   }}
                   title={
                     isFunctional
-                      ? `${stage.name}: Click to access stage workspace`
-                      : `${stage.name}: Scheduled for Phase ${stage.phaseNumber}`
+                      ? `${localized.name}: ${localized.desc}`
+                      : `${localized.name}: ${language === 'id' ? `Direncanakan pada Fase ${stage.phaseNumber}` : `Scheduled for Phase ${stage.phaseNumber}`}`
                   }
                   className={`group relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all border ${
                     isSelected
@@ -210,7 +241,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
 
                   <span className="flex items-center gap-1">
                     {getStageIcon(stage.id)}
-                    <span>{stage.name}</span>
+                    <span>{localized.name}</span>
                   </span>
 
                   {!isFunctional && (

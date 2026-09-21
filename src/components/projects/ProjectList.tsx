@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, FolderPlus, Sparkles, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { projectService } from '../../services/projectService';
 import { variableService } from '../../services/variableService';
 import { ProjectStatus, ResearchProject } from '../../types';
@@ -17,6 +18,7 @@ interface ProjectListProps {
 export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
   const { currentUser } = useAuth();
   const { success, error, info } = useToast();
+  const { language, t } = useLanguage();
 
   const [projects, setProjects] = useState<ResearchProject[]>([]);
   const [variableCounts, setVariableCounts] = useState<Record<string, number>>({});
@@ -148,9 +150,10 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
       {/* Top Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Research Projects</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">{t.projects.title}</h1>
           <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-            Isolated repository for <span className="font-semibold text-indigo-700">{currentUser.name}</span>
+            {language === 'id' ? 'Repositori terisolasi untuk ' : 'Isolated repository for '}
+            <span className="font-semibold text-indigo-700">{currentUser.name}</span>
           </p>
         </div>
 
@@ -160,10 +163,10 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
             id="btn-load-demo-data"
             onClick={handleLoadDemoProject}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-semibold rounded-lg transition-colors shadow-2xs"
-            title="Seed an academic sample project (Doomscrolling & Burnout) tagged as DEMO DATA"
+            title={language === 'id' ? 'Muat proyek sampel akademik (Doomscrolling & Burnout)' : 'Seed an academic sample project (Doomscrolling & Burnout)'}
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            Load Demo Project
+            {language === 'id' ? 'Muat Proyek Demo' : 'Load Demo Project'}
           </button>
 
           <button
@@ -176,7 +179,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
           >
             <Plus className="w-4 h-4" />
-            New Research Project
+            {t.projects.newProject}
           </button>
         </div>
       </div>
@@ -191,26 +194,33 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onOpenProject }) => {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by title, topic, or methodology..."
+            placeholder={t.projects.searchPlaceholder}
             className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-hidden"
           />
         </div>
 
         {/* Status Filter Tabs */}
         <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 text-xs">
-          {(['All', 'Draft', 'Data Collection', 'Analysis', 'Completed', 'Archived'] as const).map(tab => (
+          {[
+            { key: 'All', label: t.projects.filterAll },
+            { key: 'Draft', label: t.projects.filterDraft },
+            { key: 'Data Collection', label: language === 'id' ? 'Pengumpulan Data' : 'Data Collection' },
+            { key: 'Analysis', label: language === 'id' ? 'Analisis' : 'Analysis' },
+            { key: 'Completed', label: language === 'id' ? 'Selesai' : 'Completed' },
+            { key: 'Archived', label: t.projects.filterArchived },
+          ].map(tab => (
             <button
-              key={tab}
+              key={tab.key}
               type="button"
-              id={`filter-tab-${tab.toLowerCase().replace(' ', '-')}`}
-              onClick={() => setStatusFilter(tab)}
+              id={`filter-tab-${tab.key.toLowerCase().replace(' ', '-')}`}
+              onClick={() => setStatusFilter(tab.key as any)}
               className={`px-2.5 py-1.5 rounded-md font-medium whitespace-nowrap transition-colors ${
-                statusFilter === tab
+                statusFilter === tab.key
                   ? 'bg-indigo-600 text-white shadow-2xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Layers, Sparkles, Filter, HelpCircle, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { variableService } from '../../services/variableService';
 import { Dimension, Indicator, MeasurementScale, Variable, VariableRole } from '../../types';
 import { ConfirmModal } from '../common/ConfirmModal';
@@ -22,6 +23,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const { success, error, info } = useToast();
+  const { language, t } = useLanguage();
 
   const [variables, setVariables] = useState<Variable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -400,14 +402,16 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
                 <Layers className="w-5 h-5 text-indigo-600" />
-                Construct & Variable Builder
+                {language === 'id' ? 'Penyusun Konstruk & Variabel' : 'Construct & Variable Builder'}
               </h1>
               <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded uppercase">
-                Stage 2 of 10
+                {language === 'id' ? 'Tahap 2 dari 10' : 'Stage 2 of 10'}
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Operationalize theoretical constructs into observable dimensions and empirical indicators.
+              {language === 'id'
+                ? 'Operasionalisasikan konstruk teoretis menjadi dimensi teramati dan indikator empiris.'
+                : 'Operationalize theoretical constructs into observable dimensions and empirical indicators.'}
             </p>
           </div>
 
@@ -419,7 +423,9 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
             >
               <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
-              {showMethodologyGuide ? 'Hide Guide' : 'Methodology Guide'}
+              {showMethodologyGuide
+                ? (language === 'id' ? 'Sembunyikan Panduan' : 'Hide Guide')
+                : (language === 'id' ? 'Panduan Metodologi' : 'Methodology Guide')}
             </button>
 
             <button
@@ -432,7 +438,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Add Variable
+              {t.variables.addVariable}
             </button>
           </div>
         </div>
@@ -440,19 +446,27 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
         {/* Hierarchy Metrics Bar */}
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 pt-4 text-xs">
           <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-            <p className="text-[10px] text-slate-700 font-medium uppercase tracking-wider">Total Variables</p>
+            <p className="text-[10px] text-slate-700 font-medium uppercase tracking-wider">
+              {language === 'id' ? 'Total Variabel' : 'Total Variables'}
+            </p>
             <p className="text-base font-bold text-slate-900 mt-0.5">{variables.length}</p>
           </div>
           <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-            <p className="text-[10px] text-slate-700 font-medium uppercase tracking-wider">Total Dimensions</p>
+            <p className="text-[10px] text-slate-700 font-medium uppercase tracking-wider">
+              {language === 'id' ? 'Total Dimensi' : 'Total Dimensions'}
+            </p>
             <p className="text-base font-bold text-indigo-700 mt-0.5">{totalDimensions}</p>
           </div>
           <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-            <p className="text-[10px] text-slate-700 font-medium uppercase tracking-wider">Empirical Indicators</p>
+            <p className="text-[10px] text-slate-700 font-medium uppercase tracking-wider">
+              {language === 'id' ? 'Indikator Empiris' : 'Empirical Indicators'}
+            </p>
             <p className="text-base font-bold text-emerald-700 mt-0.5">{totalIndicators}</p>
           </div>
           <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-100 hidden sm:block">
-            <p className="text-[10px] text-slate-700 font-medium uppercase tracking-wider">Hierarchy Standard</p>
+            <p className="text-[10px] text-slate-700 font-medium uppercase tracking-wider">
+              {language === 'id' ? 'Standar Hirarki' : 'Hierarchy Standard'}
+            </p>
             <p className="text-xs font-mono font-semibold text-slate-800 mt-1">Var → Dim → Ind</p>
           </div>
         </div>
@@ -463,20 +477,32 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
         <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs space-y-3 animate-in fade-in duration-150">
           <p className="font-bold text-indigo-950 flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-indigo-600" />
-            Quantitative Operationalization Architecture
+            {language === 'id' ? 'Arsitektur Operasionalisasi Kuantitatif' : 'Quantitative Operationalization Architecture'}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-slate-700 leading-relaxed">
             <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
-              <span className="font-bold text-slate-900 block mb-1">1. Variable / Construct</span>
-              The high-level abstract concept (e.g. Doomscrolling, Burnout, Self-Efficacy). Roles define its statistical function: Independent ($X$), Dependent ($Y$), or Covariate ($C$).
+              <span className="font-bold text-slate-900 block mb-1">
+                {language === 'id' ? '1. Variabel / Konstruk' : '1. Variable / Construct'}
+              </span>
+              {language === 'id'
+                ? 'Konsep abstrak tingkat tinggi (mis. Doomscrolling, Burnout). Peran mendefinisikan fungsi statistiknya: Independen (X), Dependen (Y), atau Kontrol (C).'
+                : 'The high-level abstract concept (e.g. Doomscrolling, Burnout, Self-Efficacy). Roles define its statistical function: Independent ($X$), Dependent ($Y$), or Covariate ($C$).'}
             </div>
             <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
-              <span className="font-bold text-slate-900 block mb-1">2. Dimensions</span>
-              Theoretical facets or sub-components of a multi-dimensional construct (e.g. Compulsive Consumption, Difficulty Disengaging). Single-metric variables do not require dimensions.
+              <span className="font-bold text-slate-900 block mb-1">
+                {language === 'id' ? '2. Dimensi' : '2. Dimensions'}
+              </span>
+              {language === 'id'
+                ? 'Faset teoretis atau sub-komponen dari konstruk multi-dimensi (mis. Konsumsi Kompulsif, Kelelahan Emosional).'
+                : 'Theoretical facets or sub-components of a multi-dimensional construct (e.g. Compulsive Consumption, Difficulty Disengaging).'}
             </div>
             <div className="p-2.5 bg-white rounded-lg border border-indigo-100">
-              <span className="font-bold text-slate-900 block mb-1">3. Indicators</span>
-              Observable empirical manifestations. These indicators serve as direct anchors for scale items, Likert questions, and future psychometric verification in Phase 2.
+              <span className="font-bold text-slate-900 block mb-1">
+                {language === 'id' ? '3. Indikator' : '3. Indicators'}
+              </span>
+              {language === 'id'
+                ? 'Manifestasi empiris yang dapat diamati. Indikator ini berfungsi sebagai jangkar langsung untuk butir skala dan pertanyaan kuesioner.'
+                : 'Observable empirical manifestations. These indicators serve as direct anchors for scale items, Likert questions, and future psychometric verification in Phase 2.'}
             </div>
           </div>
         </div>
@@ -491,7 +517,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search constructs, dimensions, codes (e.g. X1), or indicators..."
+            placeholder={language === 'id' ? 'Cari konstruk, dimensi, kode (cth. X1), atau indikator...' : 'Search constructs, dimensions, codes (e.g. X1), or indicators...'}
             className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-hidden"
           />
         </div>
@@ -499,27 +525,25 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
         {/* Role Filter Tabs */}
         <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 text-xs">
           <Filter className="w-3.5 h-3.5 text-slate-400 mr-1 flex-shrink-0" />
-          {(
-            [
-              'All',
-              'Independent Variable',
-              'Dependent Variable',
-              'Control Variable',
-              'Demographic Variable',
-            ] as const
-          ).map(role => (
+          {[
+            { key: 'All', label: t.variables.filterAllRoles },
+            { key: 'Independent Variable', label: language === 'id' ? 'Independen' : 'Independent' },
+            { key: 'Dependent Variable', label: language === 'id' ? 'Dependen' : 'Dependent' },
+            { key: 'Control Variable', label: language === 'id' ? 'Kontrol' : 'Control' },
+            { key: 'Demographic Variable', label: language === 'id' ? 'Demografis' : 'Demographic' },
+          ].map(role => (
             <button
-              key={role}
+              key={role.key}
               type="button"
-              id={`filter-role-${role.toLowerCase().replace(' ', '-')}`}
-              onClick={() => setRoleFilter(role)}
+              id={`filter-role-${role.key.toLowerCase().replace(' ', '-')}`}
+              onClick={() => setRoleFilter(role.key as any)}
               className={`px-2.5 py-1.5 rounded-md font-medium whitespace-nowrap transition-colors ${
-                roleFilter === role
+                roleFilter === role.key
                   ? 'bg-indigo-600 text-white shadow-2xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
-              {role === 'All' ? 'All Roles' : role.replace(' Variable', '')}
+              {role.label}
             </button>
           ))}
         </div>
@@ -529,20 +553,28 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
       {loading ? (
         <div className="p-12 text-center text-xs text-slate-500">
           <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          Loading construct hierarchies...
+          {language === 'id' ? 'Memuat hierarki konstruk...' : 'Loading construct hierarchies...'}
         </div>
       ) : filteredVariables.length === 0 ? (
         <EmptyState
           id="no-variables-empty-state"
           icon={<Layers className="w-8 h-8 text-slate-400" />}
-          title={searchQuery || roleFilter !== 'All' ? 'No matching variables found' : 'No Variables Defined Yet'}
+          title={
+            searchQuery || roleFilter !== 'All'
+              ? (language === 'id' ? 'Tidak ada variabel yang cocok' : 'No matching variables found')
+              : t.variables.emptyTitle
+          }
           description={
             searchQuery || roleFilter !== 'All'
-              ? 'Try modifying your search keywords or resetting your role filter.'
-              : 'Variables define what you want to measure in your research. Add your first variable to construct dimensions and indicators.'
+              ? (language === 'id' ? 'Coba ubah kata kunci pencarian atau setel ulang filter peran.' : 'Try modifying your search keywords or resetting your role filter.')
+              : t.variables.emptyDesc
           }
-          academicNote="Every quantitative research study requires at least one Independent Variable (predictor) and one Dependent Variable (criterion/outcome) to test relational hypotheses."
-          actionLabel="+ Add First Variable"
+          academicNote={
+            language === 'id'
+              ? 'Setiap penelitian kuantitatif memerlukan setidaknya satu Variabel Independen (prediktor) dan satu Variabel Dependen (kriteria/luaran) untuk menguji hipotesis relasional.'
+              : 'Every quantitative research study requires at least one Independent Variable (predictor) and one Dependent Variable (criterion/outcome) to test relational hypotheses.'
+          }
+          actionLabel={t.variables.addFirst}
           onAction={() => {
             setEditingVariable(null);
             setIsVarModalOpen(true);
@@ -594,8 +626,10 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
       {variables.length > 0 && onProceedToNextStage && (
         <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
           <div className="text-xs text-slate-500">
-            <span className="font-semibold text-slate-800">Operationalization Ready: </span>
-            {variables.length} constructs defined with {totalDimensions} dimensions and {totalIndicators} indicators.
+            <span className="font-semibold text-slate-800">
+              {language === 'id' ? 'Operasionalisasi Siap: ' : 'Operationalization Ready: '}
+            </span>
+            {variables.length} {language === 'id' ? 'konstruk terdefinisi dengan' : 'constructs defined with'} {totalDimensions} {language === 'id' ? 'dimensi dan' : 'dimensions and'} {totalIndicators} {language === 'id' ? 'indikator.' : 'indicators.'}
           </div>
           <button
             type="button"
@@ -603,7 +637,7 @@ export const VariableBuilder: React.FC<VariableBuilderProps> = ({
             onClick={onProceedToNextStage}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-lg transition-colors shadow-xs"
           >
-            Review Audit Trail <ArrowRight className="w-3.5 h-3.5" />
+            {language === 'id' ? 'Lanjut ke Instrumen' : 'Proceed to Instruments'} <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
       )}

@@ -3,8 +3,12 @@ import path from 'path';
 import fs from 'fs';
 import { runMigrations } from './migrations.js';
 
-// Ensure data directory exists with restricted permissions (0700)
-const dataDir = path.join(process.cwd(), 'data');
+export const DB_PATH = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.join(process.cwd(), 'data', 'research_platform.db');
+
+// Ensure database directory exists with restricted permissions (0700)
+const dataDir = path.dirname(DB_PATH);
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 } else {
@@ -15,8 +19,32 @@ if (!fs.existsSync(dataDir)) {
   }
 }
 
-export const DB_PATH = path.join(dataDir, 'research_platform.db');
 export const db = new DatabaseSync(DB_PATH);
+
+/**
+ * Creates an isolated SQLite database connection with WAL mode, foreign keys,
+ * and up-to-date migrations applied.
+ */
+export function createDatabase(customPath: string): DatabaseSync {
+  const customDir = path.dirname(customPath);
+  if (!fs.existsSync(customDir)) {
+    fs.mkdirSync(customDir, { recursive: true, mode: 0o700 });
+  }
+  const customDb = new DatabaseSync(customPath);
+  try {
+    if (fs.existsSync(customPath)) {
+      fs.chmodSync(customPath, 0o600);
+    }
+  } catch {
+    // Platform may not support POSIX chmod
+  }
+  customDb.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+  `);
+  runMigrations(customDb);
+  return customDb;
+}
 
 // Restrict database file permissions (0600)
 try {
@@ -35,6 +63,16 @@ db.exec(`
 
 // Run schema migrations idempotently and atomically
 runMigrations(db);
+
+// Safeguard: Ensure questionnaires table has is_archived column
+try {
+  const qCols = db.prepare('PRAGMA table_info(questionnaires)').all() as any[];
+  if (qCols.length > 0 && !qCols.some((c: any) => c.name === 'is_archived')) {
+    db.exec('ALTER TABLE questionnaires ADD COLUMN is_archived INTEGER DEFAULT 0;');
+  }
+} catch {
+  // Column already present or table not ready
+}
 
 // Tables, indexes and schema versions are managed via runMigrations(db)
 
@@ -577,3 +615,471 @@ if (!demoInstVer) {
     WHERE id = 'qv_demo_doomscrolling_v1'
   `).run(demoInstId, 'inst_ver_demo_doomscrolling_v1');
 }
+
+// Ensure complete demo research variables, dimensions, indicators, and instruments exist
+const demoProjectExists = db.prepare('SELECT id FROM projects WHERE id = ?').get('proj_demo_doomscrolling_2026');
+
+if (demoProjectExists) {
+  const now = '2026-02-10T10:00:00.000Z';
+  const demoProjectId = 'proj_demo_doomscrolling_2026';
+
+  const insertDim = db.prepare(`
+    INSERT OR IGNORE INTO dimensions (
+      id, variable_id, project_id, name, code, definition, description, order_index, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertDim.run(
+    'dim_demo_3',
+    'var_demo_x1',
+    demoProjectId,
+    'Affective Despair & Hyperarousal',
+    'DIM-3',
+    'Physiological and emotional distress arising during or following online news consumption sessions.',
+    'Measures anxiety, somatic tension, and existential pessimism.',
+    3,
+    now,
+    now
+  );
+
+  const insertInd = db.prepare(`
+    INSERT OR IGNORE INTO indicators (
+      id, dimension_id, variable_id, project_id, name, code, definition, description, order_index, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertInd.run(
+    'ind_demo_2_2',
+    'dim_demo_2',
+    'var_demo_x1',
+    demoProjectId,
+    'Intrusive Urges to Re-check',
+    'IND-2.2',
+    'Cognitive preoccupation or irresistible impulses to re-inspect catastrophic feeds immediately after putting phone away.',
+    'Measures obsessive cognitive craving.',
+    2,
+    now,
+    now
+  );
+
+  insertInd.run(
+    'ind_demo_3_1',
+    'dim_demo_3',
+    'var_demo_x1',
+    demoProjectId,
+    'Somatic Anxiety While Browsing',
+    'IND-3.1',
+    'Noticing elevated heart rate, muscle tightness, or shallow breathing during news scrolling.',
+    'Measures somatic hyperarousal.',
+    1,
+    now,
+    now
+  );
+
+  insertInd.run(
+    'ind_demo_3_2',
+    'dim_demo_3',
+    'var_demo_x1',
+    demoProjectId,
+    'Existential Pessimism & Dread',
+    'IND-3.2',
+    'Feelings of helplessness, impending societal doom, or cynical despair toward the future after reading feeds.',
+    'Measures affective dysphoria.',
+    2,
+    now,
+    now
+  );
+
+  // 2. Variable Y1: Academic Burnout (Dependent Variable)
+  const insertVar = db.prepare(`
+    INSERT OR IGNORE INTO variables (
+      id, project_id, name, code, variable_type, role, measurement_scale,
+      conceptual_definition, operational_definition, description, order_index, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  insertVar.run(
+    'var_demo_y1',
+    demoProjectId,
+    'Academic Burnout',
+    'Y1',
+    'Multidimensional Latent Construct',
+    'Dependent Variable',
+    'Interval',
+    'A psychological syndrome of emotional exhaustion, cynicism, and reduced academic efficacy induced by chronic scholastic stress.',
+    'Composite score on the Maslach Burnout Inventory - Student Survey (MBI-SS), rated on a 7-point frequency scale (0 = Never to 6 = Every day).',
+    'Criterion construct measured via standard MBI-SS psychometric dimensions (Emotional Exhaustion, Cynicism, Academic Inefficacy).',
+    2,
+    now,
+    now
+  );
+
+  // Dimensions for Y1
+  insertDim.run(
+    'dim_demo_4',
+    'var_demo_y1',
+    demoProjectId,
+    'Emotional Exhaustion',
+    'DIM-4',
+    'Feelings of being depleted and emptied of emotional and cognitive resources due to academic demands.',
+    'Assesses energy depletion and chronic scholastic fatigue.',
+    1,
+    now,
+    now
+  );
+
+  insertDim.run(
+    'dim_demo_5',
+    'var_demo_y1',
+    demoProjectId,
+    'Cynicism & Academic Detachment',
+    'DIM-5',
+    'An indifferent or distant attitude toward academic work and doubting its societal value.',
+    'Assesses depersonalization and intellectual disillusionment.',
+    2,
+    now,
+    now
+  );
+
+  insertDim.run(
+    'dim_demo_6',
+    'var_demo_y1',
+    demoProjectId,
+    'Reduced Academic Efficacy',
+    'DIM-6',
+    'Feelings of incompetence and a lack of achievement and productivity in academic studies.',
+    'Assesses diminished scholastic self-efficacy.',
+    3,
+    now,
+    now
+  );
+
+  // Indicators for Y1
+  insertInd.run(
+    'ind_demo_4_1',
+    'dim_demo_4',
+    'var_demo_y1',
+    demoProjectId,
+    'Mental Depletion After Lectures',
+    'IND-4.1',
+    'Feeling intellectually exhausted at the end of a typical study day.',
+    'Measures post-class fatigue.',
+    1,
+    now,
+    now
+  );
+
+  insertInd.run(
+    'ind_demo_4_2',
+    'dim_demo_4',
+    'var_demo_y1',
+    demoProjectId,
+    'Morning Fatigue Facing Coursework',
+    'IND-4.2',
+    'Waking up feeling tired and unenthusiastic about scholastic obligations.',
+    'Measures anticipatory burnout.',
+    2,
+    now,
+    now
+  );
+
+  insertInd.run(
+    'ind_demo_5_1',
+    'dim_demo_5',
+    'var_demo_y1',
+    demoProjectId,
+    'Skepticism of Degree Utility',
+    'IND-5.1',
+    'Questioning the purpose and long-term significance of university curriculum.',
+    'Measures academic cynicism.',
+    1,
+    now,
+    now
+  );
+
+  insertInd.run(
+    'ind_demo_5_2',
+    'dim_demo_5',
+    'var_demo_y1',
+    demoProjectId,
+    'Loss of Interest in Studies',
+    'IND-5.2',
+    'Becoming cynical and unenthusiastic about course topics previously found engaging.',
+    'Measures scholastic alienation.',
+    2,
+    now,
+    now
+  );
+
+  insertInd.run(
+    'ind_demo_6_1',
+    'dim_demo_6',
+    'var_demo_y1',
+    demoProjectId,
+    'Doubts in Scholastic Competence',
+    'IND-6.1',
+    'Doubting ability to effectively understand course concepts and pass examinations.',
+    'Measures competence deficits.',
+    1,
+    now,
+    now
+  );
+
+  insertInd.run(
+    'ind_demo_6_2',
+    'dim_demo_6',
+    'var_demo_y1',
+    demoProjectId,
+    'Diminished Achievement Satisfaction',
+    'IND-6.2',
+    'Lack of satisfaction or fulfillment when completing academic milestones and assignments.',
+    'Measures inefficacy.',
+    2,
+    now,
+    now
+  );
+
+  // 3. Variable C1: Total Daily Screen Time (Control Variable)
+  insertVar.run(
+    'var_demo_c1',
+    demoProjectId,
+    'Total Daily Screen Time',
+    'C1',
+    'Observed Continuous Metric',
+    'Control Variable',
+    'Ratio',
+    'Cumulative hours and minutes spent engaged with mobile screen devices per 24-hour cycle.',
+    'Self-reported average daily mobile screen time in minutes, cross-validated against OS system battery/screen time summary screenshot report.',
+    'Statistical covariate to isolate specific negative content browsing from general screen exposure.',
+    3,
+    now,
+    now
+  );
+
+  // 4. Variable D1: Academic Year / Cohort (Demographic Variable)
+  insertVar.run(
+    'var_demo_d1',
+    demoProjectId,
+    'Academic Year / Cohort',
+    'D1',
+    'Categorical Attribute',
+    'Demographic Variable',
+    'Ordinal',
+    'The current matriculation stage of the student within their undergraduate curriculum.',
+    'Ordinal self-classification: 1 = Freshman (Year 1), 2 = Sophomore (Year 2), 3 = Junior (Year 3), 4 = Senior (Year 4+).',
+    'Demographic classification variable for subgroup descriptive stratification.',
+    4,
+    now,
+    now
+  );
+
+  // 5. Items 6, 7, 8 for DMS instrument
+  const insertItem = db.prepare(`
+    INSERT OR IGNORE INTO instrument_items (
+      id, instrument_id, project_id, item_code, item_number, question_text, item_type,
+      variable_id, dimension_id, indicator_id, response_scale_id, required, reverse_coded, status, source, notes, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+  `);
+
+  insertItem.run(
+    'item_demo_6',
+    'inst_demo_doomscrolling',
+    demoProjectId,
+    'DMS.06',
+    6,
+    'I can easily stop reading distressing online news whenever I choose to do so.',
+    'Likert',
+    'var_demo_x1',
+    'dim_demo_2',
+    'ind_demo_2_2',
+    'scale_likert_5_freq',
+    1,
+    1, // Reverse Coded!
+    'Adapted',
+    'Negatively-keyed item to detect acquiescence bias',
+    now,
+    now
+  );
+
+  insertItem.run(
+    'item_demo_7',
+    'inst_demo_doomscrolling',
+    demoProjectId,
+    'DMS.07',
+    7,
+    'I feel an intrusive urge to re-check headlines immediately after putting my phone down.',
+    'Likert',
+    'var_demo_x1',
+    'dim_demo_2',
+    'ind_demo_2_2',
+    'scale_likert_5_freq',
+    1,
+    0,
+    'Adapted',
+    'Adapted from Sharma et al. (2022) Item 8',
+    now,
+    now
+  );
+
+  insertItem.run(
+    'item_demo_8',
+    'inst_demo_doomscrolling',
+    demoProjectId,
+    'DMS.08',
+    8,
+    'Reading about alarming world events causes me to postpone working on my university assignments.',
+    'Likert',
+    'var_demo_x1',
+    'dim_demo_1',
+    'ind_demo_1_1',
+    'scale_likert_5_freq',
+    1,
+    0,
+    'Adapted',
+    'Adapted from Sharma et al. (2022) Item 9',
+    now,
+    now
+  );
+
+  // 6. Instrument for Academic Burnout (MBI-SS)
+  db.prepare(`
+    INSERT OR IGNORE INTO instruments (
+      id, project_id, name, code, description, purpose, source_type, source_reference,
+      version, status, variable_ids_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '1.0', 'Draft', ?, ?, ?)
+  `).run(
+    'inst_demo_burnout',
+    demoProjectId,
+    'Maslach Burnout Inventory - Student Survey (MBI-SS)',
+    'MBI-SS',
+    'A 6-item adapted psychometric instrument evaluating emotional exhaustion, academic cynicism, and professional efficacy among university undergraduates.',
+    'To quantify scholastic burnout dimensions among undergraduate students.',
+    'Adapted Instrument',
+    'Adapted from Schaufeli et al. (2002) and Maslach et al.',
+    JSON.stringify(['var_demo_y1']),
+    now,
+    now
+  );
+
+  // Items for MBI-SS instrument
+  insertItem.run(
+    'item_demo_mbi_1',
+    'inst_demo_burnout',
+    demoProjectId,
+    'MBI.01',
+    1,
+    'I feel emotionally drained by my university studies and course workload.',
+    'Likert',
+    'var_demo_y1',
+    'dim_demo_4',
+    'ind_demo_4_1',
+    'scale_mbi_7_freq',
+    1,
+    0,
+    'Adapted',
+    'Emotional Exhaustion item 1',
+    now,
+    now
+  );
+
+  insertItem.run(
+    'item_demo_mbi_2',
+    'inst_demo_burnout',
+    demoProjectId,
+    'MBI.02',
+    2,
+    'I feel completely burned out and exhausted at the end of a typical study day.',
+    'Likert',
+    'var_demo_y1',
+    'dim_demo_4',
+    'ind_demo_4_2',
+    'scale_mbi_7_freq',
+    1,
+    0,
+    'Adapted',
+    'Emotional Exhaustion item 2',
+    now,
+    now
+  );
+
+  insertItem.run(
+    'item_demo_mbi_3',
+    'inst_demo_burnout',
+    demoProjectId,
+    'MBI.03',
+    3,
+    'I have become more cynical and detached about the potential benefits of my university courses.',
+    'Likert',
+    'var_demo_y1',
+    'dim_demo_5',
+    'ind_demo_5_1',
+    'scale_mbi_7_freq',
+    1,
+    0,
+    'Adapted',
+    'Cynicism item 1',
+    now,
+    now
+  );
+
+  insertItem.run(
+    'item_demo_mbi_4',
+    'inst_demo_burnout',
+    demoProjectId,
+    'MBI.04',
+    4,
+    'I doubt the significance and practical value of what I am learning in my degree program.',
+    'Likert',
+    'var_demo_y1',
+    'dim_demo_5',
+    'ind_demo_5_2',
+    'scale_mbi_7_freq',
+    1,
+    0,
+    'Adapted',
+    'Cynicism item 2',
+    now,
+    now
+  );
+
+  insertItem.run(
+    'item_demo_mbi_5',
+    'inst_demo_burnout',
+    demoProjectId,
+    'MBI.05',
+    5,
+    'In my opinion, I am effective at solving academic problems that arise during my coursework.',
+    'Likert',
+    'var_demo_y1',
+    'dim_demo_6',
+    'ind_demo_6_1',
+    'scale_mbi_7_freq',
+    1,
+    1, // Reverse coded (efficacy)
+    'Adapted',
+    'Academic Inefficacy item 1 (Reversed)',
+    now,
+    now
+  );
+
+  insertItem.run(
+    'item_demo_mbi_6',
+    'inst_demo_burnout',
+    demoProjectId,
+    'MBI.06',
+    6,
+    'I feel stimulated and accomplished when I achieve my study goals.',
+    'Likert',
+    'var_demo_y1',
+    'dim_demo_6',
+    'ind_demo_6_2',
+    'scale_mbi_7_freq',
+    1,
+    1, // Reverse coded (efficacy)
+    'Adapted',
+    'Academic Inefficacy item 2 (Reversed)',
+    now,
+    now
+  );
+}
+

@@ -72,6 +72,7 @@ export interface Questionnaire {
   startDate?: string;
   endDate?: string;
   maxResponses?: number;
+  isArchived?: boolean;
   createdAt: string;
   updatedAt: string;
 }
